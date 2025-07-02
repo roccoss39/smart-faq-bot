@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart FAQ Bot - Salon Fryzjerski</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="api-status" id="apiStatus">
+        <span id="statusText">DEMO MODE</span>
+    </div>
+    
+    <div class="chat-widget">
+        <div class="chat-header">
+            <div class="salon-info">
+                <div class="salon-avatar">✂️</div>
+                <div class="salon-details">
+                    <h3>Salon "Kleopatra"</h3>
+                    <p>AI Asystent - zawsze online</p>
+                </div>
+            </div>
+            <div class="status-indicator"></div>
+        </div>
+        
+        <div class="chat-messages" id="messages">
+            <!-- Wiadomości będą dodawane tutaj przez JavaScript -->
+        </div>
+        
+        <div class="typing-indicator" id="typing">
+            <div class="typing-dots">
+                <div></div>
+                <div></div>
+                <div></div>
+            </div>
+            Asystent pisze...
+        </div>
+        
+        <div class="chat-input">
+            <div class="input-group">
+                <input type="text" id="userInput" placeholder="Napisz swoją wiadomość...">
+                <button class="send-button" onclick="sendMessage()">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                    </svg>
+                </button>
+            </div>
+            
+            <div class="quick-replies">
+                <button class="quick-reply" onclick="quickReply('Jakie są ceny strzyżenia?')">
+                    💰 Ceny
+                </button>
+                <button class="quick-reply" onclick="quickReply('Kiedy macie wolne terminy?')">
+                    📅 Terminy
+                </button>
+                <button class="quick-reply" onclick="quickReply('Jakie usługi oferujecie?')">
+                    ✂️ Usługi
+                </button>
+                <button class="quick-reply" onclick="quickReply('Gdzie się znajdujecie?')">
+                    📍 Lokalizacja
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Załaduj pliki JavaScript -->
+    <script src="config.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

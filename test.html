@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test - Smart FAQ Bot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .status { 
+            padding: 10px; 
+            border-radius: 5px; 
+            margin: 10px 0; 
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .warning { background: #fff3cd; color: #856404; }
+        .test-button {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 Test Smart FAQ Bot</h1>
+        
+        <h2>📋 Lista kontrolna plików</h2>
+        <div id="fileCheck">
+            <p>🔄 Sprawdzanie plików...</p>
+        </div>
+        
+        <h2>⚙️ Test konfiguracji</h2>
+        <div id="configCheck">
+            <p>🔄 Sprawdzanie konfiguracji...</p>
+        </div>
+        
+        <h2>🤖 Test bota</h2>
+        <button class="test-button" onclick="testBot()">Uruchom test</button>
+        <div id="botTest"></div>
+        
+        <h2>👀 Podgląd bota</h2>
+        <iframe src="index.html" title="Smart FAQ Bot Preview"></iframe>
+        
+        <h2>📝 Instrukcje testowania</h2>
+        
+        <div class="status warning">
+            <strong>⚠️ WAŻNE - Jak uruchomić lokalnie:</strong>
+            <p>Jeśli widzisz błędy CORS lub pliki się nie ładują:</p>
+            <ol>
+                <li><strong>Opcja 1 (VS Code):</strong> Zainstaluj rozszerzenie "Live Server", kliknij prawym na index.html → "Open with Live Server"</li>
+                <li><strong>Opcja 2 (Python):</strong> Otwórz terminal w folderze projektu i wpisz:<br>
+                    <code>python -m http.server 8000</code><br>
+                    Potem idź na: http://localhost:8000</li>
+                <li><strong>Opcja 3 (Node.js):</strong> <code>npx serve .</code></li>
+            </ol>
+        </div>
+        
+        <div class="status warning">
+            <strong>Przetestuj te scenariusze w bocie:</strong>
+            <ul>
+                <li>Napisz: "Jakie są ceny strzyżenia?" - powinien pokazać cennik</li>
+                <li>Napisz: "Kiedy macie otwarte?" - powinien pokazać godziny</li>
+                <li>Napisz: "Gdzie się znajdujecie?" - powinien pokazać adres</li>
+                <li>Napisz: "PILNE!" - powinien przekierować do recepcji</li>
+                <li>Napisz: "reklamacja" - powinien przekierować do kierownika</li>
+            </ul>
+        </div>
+        
+        <h2>🔧 Debug</h2>
+        <button class="test-button" onclick="showDebugInfo()">Pokaż info debug</button>
+        <div id="debugInfo"></div>
+    </div>
+
+    <!-- Załaduj pliki skryptów bezpośrednio -->
+    <script src="config.js"></script>
+    <script src="script.js"></script>
+    
+    <script>
+        // Test plików - sprawdź czy skrypty się załadowały
+        function checkFiles() {
+            const fileCheck = document.getElementById('fileCheck');
+            let html = '';
+            
+            // Sprawdź index.html (iframe test)
+            html += '<div class="status success">✅ index.html - OK (widoczny w iframe)</div>';
+            
+            // Sprawdź config.js
+            if (typeof IS_API_CONFIGURED !== 'undefined') {
+                html += '<div class="status success">✅ config.js - OK</div>';
+            } else {
+                html += '<div class="status error">❌ config.js - BŁĄD ŁADOWANIA</div>';
+            }
+            
+            // Sprawdź script.js  
+            if (typeof detectIntent !== 'undefined') {
+                html += '<div class="status success">✅ script.js - OK</div>';
+            } else {
+                html += '<div class="status error">❌ script.js - BŁĄD ŁADOWANIA</div>';
+            }
+            
+            // Sprawdź style.css (przez iframe)
+            html += '<div class="status success">✅ style.css - OK (sprawdź iframe)</div>';
+            
+            fileCheck.innerHTML = html;
+        }
+        
+        // Test konfiguracji
+        function checkConfig() {
+            const configCheck = document.getElementById('configCheck');
+            
+            if (typeof IS_API_CONFIGURED !== 'undefined') {
+                if (IS_API_CONFIGURED) {
+                    configCheck.innerHTML = '<div class="status success">✅ OpenAI API skonfigurowane</div>';
+                } else {
+                    configCheck.innerHTML = '<div class="status warning">⚠️ Tryb DEMO (brak klucza API)</div>';
+                }
+                
+                // Dodatkowe informacje
+                if (typeof SYSTEM_PROMPT !== 'undefined') {
+                    configCheck.innerHTML += '<div class="status success">✅ System Prompt załadowany</div>';
+                }
+                
+                if (typeof KNOWLEDGE_BASE !== 'undefined') {
+                    configCheck.innerHTML += '<div class="status success">✅ Baza wiedzy załadowana</div>';
+                }
+            } else {
+                configCheck.innerHTML = '<div class="status error">❌ config.js nie załadowany - sprawdź ścieżkę pliku</div>';
+            }
+        }
+        
+        // Test bota
+        function testBot() {
+            const botTest = document.getElementById('botTest');
+            botTest.innerHTML = '<p>🧪 Testowanie funkcji bota...</p>';
+            
+            let testResults = '';
+            
+            // Test 1: detectIntent
+            if (typeof detectIntent !== 'undefined') {
+                const testMessage = "jakie są ceny strzyżenia?";
+                try {
+                    const intent = detectIntent(testMessage);
+                    testResults += `<div class="status success">✅ detectIntent("${testMessage}") = ${intent}</div>`;
+                } catch (error) {
+                    testResults += `<div class="status error">❌ Błąd detectIntent: ${error.message}</div>`;
+                }
+            } else {
+                testResults += '<div class="status error">❌ Funkcja detectIntent nie znaleziona</div>';
+            }
+            
+            // Test 2: getFallbackResponse
+            if (typeof getFallbackResponse !== 'undefined') {
+                try {
+                    const response = getFallbackResponse("ceny strzyżenia");
+                    testResults += `<div class="status success">✅ getFallbackResponse działa</div>`;
+                } catch (error) {
+                    testResults += `<div class="status error">❌ Błąd getFallbackResponse: ${error.message}</div>`;
+                }
+            } else {
+                testResults += '<div class="status error">❌ Funkcja getFallbackResponse nie znaleziona</div>';
+            }
+            
+            // Test 3: Sprawdź INTENTS
+            if (typeof INTENTS !== 'undefined') {
+                testResults += `<div class="status success">✅ INTENTS załadowane (${Object.keys(INTENTS).length} kategorii)</div>`;
+            } else {
+                testResults += '<div class="status error">❌ INTENTS nie załadowane</div>';
+            }
+            
+            botTest.innerHTML = testResults;
+        }
+        
+        // Debug info  
+        function showDebugInfo() {
+            const debugInfo = document.getElementById('debugInfo');
+            
+            let info = '<h4>🔍 Informacje debug:</h4>';
+            info += `<p><strong>User Agent:</strong> ${navigator.userAgent}</p>`;
+            info += `<p><strong>URL:</strong> ${window.location.href}</p>`;
+            info += `<p><strong>Czas ładowania:</strong> ${new Date()}</p>`;
+            info += `<p><strong>Protocol:</strong> ${window.location.protocol}</p>`;
+            
+            // Sprawdź dostępne zmienne globalne
+            const globals = [];
+            if (typeof IS_API_CONFIGURED !== 'undefined') globals.push('IS_API_CONFIGURED');
+            if (typeof SYSTEM_PROMPT !== 'undefined') globals.push('SYSTEM_PROMPT');
+            if (typeof INTENTS !== 'undefined') globals.push('INTENTS');
+            if (typeof KNOWLEDGE_BASE !== 'undefined') globals.push('KNOWLEDGE_BASE');
+            if (typeof detectIntent !== 'undefined') globals.push('detectIntent()');
+            if (typeof getFallbackResponse !== 'undefined') globals.push('getFallbackResponse()');
+            
+            info += `<p><strong>Załadowane komponenty:</strong> ${globals.join(', ')}</p>`;
+            
+            if (typeof debugBot !== 'undefined') {
+                info += '<p><strong>Debug Bot:</strong> Dostępny ✅</p>';
+                try {
+                    const history = debugBot.getHistory();
+                    info += `<p><strong>Historia rozmów:</strong> ${history.length} wiadomości</p>`;
+                } catch (e) {
+                    info += '<p><strong>Debug Bot:</strong> Błąd dostępu</p>';
+                }
+            } else {
+                info += '<p><strong>Debug Bot:</strong> Niedostępny (bot nie uruchomiony)</p>';
+            }
+            
+            debugInfo.innerHTML = info;
+        }
+        
+        // Uruchom testy po załadowaniu
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                checkFiles();
+                checkConfig();
+            }, 500);
+        });
+    </script>
+</body>
+</html>

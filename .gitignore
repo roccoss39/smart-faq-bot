@@ -1,0 +1,44 @@
+# ================================
+# SMART FAQ BOT - .gitignore
+# ================================
+
+# Klucze API (WAŻNE!)
+config-production.js
+.env
+*.env
+api-keys.txt
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+
+# Backup files
+*.backup
+*.bak
+*.tmp
+
+# Node.js (jeśli będziesz rozbudowywać)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build files
+dist/
+build/
+
+# Tymczasowe pliki testowe
+test-*.html
+debug-*.js
