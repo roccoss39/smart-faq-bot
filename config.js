@@ -174,8 +174,8 @@ Jak mogę Ci pomóc?`
 const BOT_CONFIG = {
     maxTokens: 500,
     temperature: 0.7,
-    model: "meta-llama/Llama-3.2-3B-Instruct-Turbo", // Szybszy i bez "thinking"
-   // model: "deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free", // Together AI model
+    //model: "meta-llama/Llama-3.2-3B-Instruct-Turbo", // Szybszy i bez "thinking"
+    model: "deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free", // Together AI model
     typingDelay: {
         min: 1000,
         max: 3000

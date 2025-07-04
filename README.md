@@ -24,6 +24,8 @@ smart-faq-bot/
 
 ## ⚡ Szybki start
 
+source .venv/bin/activate
+
 ### 1. Przygotowanie
 ```bash
 # Sklonuj lub pobierz pliki projektu
