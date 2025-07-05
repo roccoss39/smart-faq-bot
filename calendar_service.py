@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import pytz
 import logging
 import os
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ class CalendarService:
             current_day = 0
             
             # Sprawdzaj dni aż znajdziesz wystarczająco dni roboczych
-            while days_checked < days_ahead and current_day < 14:  # Max 14 dni
+            while days_checked < days_ahead and current_day < 21:  # 3 tygodnie
                 date = datetime.now(tz) + timedelta(days=current_day)
                 day_name = date.strftime('%A').lower()
                 
@@ -96,7 +97,20 @@ class CalendarService:
             
             # Sortuj po dacie i zwróć max 10
             available_slots.sort(key=lambda x: x['datetime'])
-            return available_slots[:10]
+            
+            # LEPSZE ROZWIĄZANIE - po kilka slotów z każdego dnia:
+            from collections import defaultdict
+            slots_by_day = defaultdict(list)
+            for slot in available_slots:
+                slots_by_day[slot['day_name']].append(slot)
+
+            # Weź po 3-4 sloty z każdego dnia
+            final_slots = []
+            for day_name, day_slots in slots_by_day.items():
+                final_slots.extend(day_slots[:4])  # Max 4 sloty z każdego dnia
+                
+            final_slots.sort(key=lambda x: x['datetime'])
+            return final_slots[:20]  # Max 20 slotów total
             
         except Exception as e:
             logger.error(f"❌ Błąd pobierania terminów: {e}")
