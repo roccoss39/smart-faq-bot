@@ -334,7 +334,6 @@ def clean_thinking_response(response_text):
     # Jeśli jest <think> ale nie ma </think>, weź tylko tekst po <think>
     if '<think>' in cleaned.lower() and '</think>' not in cleaned.lower():
         # Znajdź indeks ostatniego <think>
-        import re
         think_pattern = re.compile(r'<think[^>]*>', re.IGNORECASE)
         matches = list(think_pattern.finditer(cleaned))
         if matches:

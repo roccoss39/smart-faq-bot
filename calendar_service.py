@@ -13,6 +13,7 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
+# KONFIGURACJA ZAAWANSOWANA:
 class CalendarService:
     def __init__(self, credentials_file='credentials.json', calendar_id=None):
         self.credentials_file = credentials_file
@@ -33,6 +34,14 @@ class CalendarService:
             'friday': (9, 19),
             'saturday': (9, 16),
             'sunday': None
+        }
+        
+        # 🔧 KONFIGURACJA WEDŁUG USŁUGI
+        self.SERVICE_CONFIG = {
+            'Strzyżenie': {'max_clients': 3, 'duration': 30},
+            'Farbowanie': {'max_clients': 1, 'duration': 90},  # Długa usługa - jeden klient
+            'Pasemka': {'max_clients': 1, 'duration': 120},
+            'default': {'max_clients': 2, 'duration': 45}
         }
         
         self._init_service()
@@ -224,6 +233,11 @@ class CalendarService:
             return False
         
         try:
+            # Sprawdź maksymalną liczbę klientów dla danej usługi
+            service_config = self.SERVICE_CONFIG.get(service_type, self.SERVICE_CONFIG['default'])
+            max_clients = service_config['max_clients']
+            duration_minutes = service_config['duration']
+            
             end_time = appointment_time + timedelta(minutes=duration_minutes)
             
             event = {
