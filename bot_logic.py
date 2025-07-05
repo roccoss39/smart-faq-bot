@@ -564,15 +564,16 @@ MESSAGE: "{user_message}"
 
 CATEGORIES:
 - BOOKING: Specific booking with BOTH day AND time mentioned (e.g. "umawiam się na wtorek 10:00")
-- SHOW_AVAILABLE: Asking about available times - can be specific day OR general (e.g. "jakie godziny we wtorek?", "kiedy mają państwo wolne?", "wolne terminy?")  
+- SHOW_AVAILABLE: Asking about available APPOINTMENT times for booking (e.g. "jakie godziny we wtorek?", "kiedy mają państwo wolne terminy?", "dostępne terminy?")  
 - GENERAL_BOOKING: General booking request WITHOUT specific time (e.g. "chce sie ostrzyc", "chcę się umówić", "potrzebuję wizyty")
 - CONTACT_INFO: Personal contact details (e.g. "Jan Kowalski, 123456789")
 - CANCEL: Cancel request (e.g. "anuluj", "rezygnuję")
-- GENERAL: Other questions (e.g. "ile kosztuje?", "gdzie jesteście?")
+- GENERAL: Other questions about salon info, prices, location, opening hours (e.g. "ile kosztuje?", "gdzie jesteście?", "godziny pracy?")
 
 IMPORTANT:
 - "chce sie ostrzyc" = GENERAL_BOOKING (no specific time)
-- "kiedy mają państwo wolne?" = SHOW_AVAILABLE (asking about availability)
+- "kiedy mają państwo wolne?" = SHOW_AVAILABLE (asking about appointment availability)
+- "jakie macie godziny pracy?" = GENERAL (asking about business hours, not appointments)
 - Must have BOTH day AND time for BOOKING
 
 Answer with ONLY the category name, nothing else:"""
