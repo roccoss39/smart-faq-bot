@@ -10,9 +10,13 @@ import logging
 import requests
 import json
 import time
+from dotenv import load_dotenv
 
 # IMPORT LOGIKI BOTA
 from bot_logic import process_user_message, clean_thinking_response, SYSTEM_PROMPT, client
+
+# Załaduj zmienne z .env
+load_dotenv()
 
 # Konfiguracja logowania 
 logging.basicConfig(level=logging.INFO)
@@ -25,8 +29,19 @@ CORS(app)
 # FACEBOOK WEBHOOK CONFIGURATION
 # ==============================================
 
-FACEBOOK_VERIFY_TOKEN = os.getenv('FACEBOOK_VERIFY_TOKEN', 'kleopatra_bot_verify_2024')
+FACEBOOK_VERIFY_TOKEN = os.getenv('FACEBOOK_VERIFY_TOKEN', 'Qweqweqwe1')
 FACEBOOK_PAGE_ACCESS_TOKEN = os.getenv('FACEBOOK_PAGE_ACCESS_TOKEN')
+FACEBOOK_PAGE_ID = os.getenv('FACEBOOK_PAGE_ID')
+
+# Sprawdź czy wszystkie klucze są dostępne
+required_vars = ['FACEBOOK_PAGE_ACCESS_TOKEN', 'TOGETHER_API_KEY']
+missing_vars = [var for var in required_vars if not os.getenv(var)]
+
+if missing_vars:
+    logger.error(f"❌ Brakujące zmienne środowiskowe: {missing_vars}")
+    logger.error("💡 Sprawdź plik .env")
+else:
+    logger.info("✅ Wszystkie zmienne środowiskowe załadowane")
 
 def get_page_id():
     """Pobierz ID strony z tokenu"""

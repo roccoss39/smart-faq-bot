@@ -42,3 +42,9 @@ build/
 # Tymczasowe pliki testowe
 test-*.html
 debug-*.js
+.env
+credentials.json
+token.json
+*.log
+__pycache__/
+.venv/
