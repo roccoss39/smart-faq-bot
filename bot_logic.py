@@ -392,7 +392,7 @@ def process_user_message(user_message, user_id=None):
         # AI ANALYSIS INTENCJI
         # ===========================================
         
-        intent = analyze_user_intent(user_message, session)
+        intent = analyze_user_intent(user_message) # ← TERAZ BĘDZIE DZIAŁAĆ
         
         # ===========================================
         # OBSŁUGA NA PODSTAWIE INTENCJI
