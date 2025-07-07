@@ -329,30 +329,39 @@ def create_appointment(client_name, client_phone, service_type, appointment_time
         client_name, client_phone, service_type, appointment_time, duration_minutes
     )
 
-# DODAJ do calendar_service.py (na końcu pliku):
-
 def cancel_appointment(client_name, client_phone, appointment_day, appointment_time):
     """Anuluj wizytę w kalendarzu Google"""
     try:
         calendar_service = get_calendar_service()
         tz = pytz.timezone('Europe/Warsaw')
         
-        # Konwertuj dzień na datetime
+        # 🔧 POPRAWKA - użyj TEGO SAMEGO ALGORYTMU co w tworzeniu wizyt
         day_map = {
-            'Poniedziałek': 0, 'Wtorek': 1, 'Środa': 2, 
-            'Czwartek': 3, 'Piątek': 4, 'Sobota': 5
+            'poniedziałek': 0, 'wtorek': 1, 'środa': 2, 
+            'czwartek': 3, 'piątek': 4, 'sobota': 5,
+            'niedziela': 6
         }
         
-        target_day = day_map.get(appointment_day)
+        # Konwertuj na małe litery
+        appointment_day_lower = appointment_day.lower()
+        target_day = day_map.get(appointment_day_lower)
+        
         if target_day is None:
             logger.error(f"❌ Nieprawidłowy dzień: {appointment_day}")
             return False
         
-        # Znajdź datę
+        # 🔧 KLUCZOWA POPRAWKA - użyj DOKŁADNIE tej samej logiki co create_appointment!
         now = datetime.now(tz)
-        days_ahead = (target_day - now.weekday()) % 7
-        if days_ahead == 0:  # Dzisiaj
-            days_ahead = 7  # Następny tydzień
+        current_weekday = now.weekday()
+        
+        # Znajdź następny dzień tygodnia (może być dziś, jeśli jest późno)
+        days_ahead = (target_day - current_weekday) % 7
+        
+        # 🔧 WAŻNE: Jeśli to dziś, ale późno - sprawdź czy wizyta mogła być na dziś
+        if days_ahead == 0 and now.hour >= 18:  # Po 18:00 - wizyta na przyszły tydzień
+            days_ahead = 7
+        elif days_ahead == 0:  # Dziś, ale wcześnie - może być na dziś
+            pass  # Zostaw days_ahead = 0
             
         appointment_date = now + timedelta(days=days_ahead)
         
@@ -365,19 +374,25 @@ def cancel_appointment(client_name, client_phone, appointment_day, appointment_t
             microsecond=0
         )
         
-        # Sprawdź wydarzenia w tym dniu
-        day_start = start_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
-        day_end = start_datetime.replace(hour=23, minute=59, second=59, microsecond=999999)
+        # 🔧 DEBUG - pokaż szukaną datę
+        logger.info(f"🔍 Szukam wizyty na: {start_datetime.strftime('%Y-%m-%d %H:%M')} (dzień: {appointment_day})")
+        
+        # 🔧 ALTERNATYWNE PODEJŚCIE - szukaj w zakresie ±7 dni
+        search_start = start_datetime - timedelta(days=7)
+        search_end = start_datetime + timedelta(days=7)
+        
+        logger.info(f"🔍 Zakres wyszukiwania: {search_start.strftime('%Y-%m-%d')} do {search_end.strftime('%Y-%m-%d')}")
         
         events = calendar_service.service.events().list(
             calendarId=calendar_service.calendar_id,
-            timeMin=day_start.isoformat(),
-            timeMax=day_end.isoformat(),
+            timeMin=search_start.isoformat(),
+            timeMax=search_end.isoformat(),
             singleEvents=True,
             orderBy='startTime'
         ).execute()
         
         events_list = events.get('items', [])
+        logger.info(f"🔍 Znaleziono {len(events_list)} wydarzeń w zakresie")
         
         # Znajdź wizytę do anulowania
         for event in events_list:
@@ -389,22 +404,31 @@ def cancel_appointment(client_name, client_phone, appointment_day, appointment_t
             event_datetime = datetime.fromisoformat(event_start.replace('Z', '+00:00'))
             event_datetime = event_datetime.astimezone(tz)
             
-            # Sprawdź czy to ta wizyta
             summary = event.get('summary', '')
             description = event.get('description', '')
             
-            # Warunki dopasowania:
-            # 1. Ten sam czas
-            time_match = (event_datetime.hour == start_datetime.hour and 
-                         event_datetime.minute == start_datetime.minute)
+            # 🔧 ULEPSZONE WARUNKI DOPASOWANIA:
+            # 1. Ten sam czas (godzina:minuta)
+            time_match = (event_datetime.hour == int(time_parts[0]) and 
+                         event_datetime.minute == int(time_parts[1]))
             
-            # 2. Imię w tytule lub opisie
+            # 2. Imię w tytule lub opisie (case insensitive)
             name_match = client_name.lower() in summary.lower() or client_name.lower() in description.lower()
             
             # 3. Telefon w opisie
             phone_match = client_phone in description
             
-            if time_match and (name_match or phone_match):
+            # 4. Dzień tygodnia się zgadza
+            event_weekday = event_datetime.weekday()
+            day_match = event_weekday == target_day
+            
+            logger.info(f"🔍 Sprawdzam: {summary} - {event_start}")
+            logger.info(f"   ⏰ Time match: {time_match} ({event_datetime.hour}:{event_datetime.minute:02d} vs {time_parts[0]}:{time_parts[1]})")
+            logger.info(f"   👤 Name match: {name_match} ({client_name.lower()} in {summary.lower()})")
+            logger.info(f"   📞 Phone match: {phone_match} ({client_phone} in description)")
+            logger.info(f"   📅 Day match: {day_match} (weekday {event_weekday} vs {target_day})")
+            
+            if time_match and day_match and (name_match or phone_match):
                 # USUŃ WIZYTĘ
                 try:
                     calendar_service.service.events().delete(
@@ -426,6 +450,7 @@ def cancel_appointment(client_name, client_phone, appointment_day, appointment_t
         
         # Nie znaleziono wizyty
         logger.warning(f"❌ Nie znaleziono wizyty: {client_name}, {appointment_day} {appointment_time}")
+        logger.warning(f"❌ Szukano na: {start_datetime.strftime('%Y-%m-%d %H:%M')}")
         return False
         
     except Exception as e:
@@ -473,4 +498,65 @@ def get_upcoming_appointments(days_ahead=14):
         
     except Exception as e:
         logger.error(f"❌ Błąd pobierania wizyt: {e}")
+        return []
+
+# DODAJ na końcu calendar_service.py:
+
+def get_available_slots_for_day(target_day_name, slot_duration=30):
+    """
+    Pobierz WSZYSTKIE dostępne terminy dla konkretnego dnia
+    
+    Args:
+        target_day_name (str): Nazwa dnia po polsku (np. "środa", "piątek")
+        slot_duration (int): Długość slotu w minutach
+        
+    Returns:
+        list: Wszystkie dostępne terminy dla tego dnia
+    """
+    calendar_service = get_calendar_service()
+    
+    if not calendar_service.service:
+        logger.error("❌ Calendar service nie jest zainicjalizowany")
+        return []
+    
+    try:
+        # Mapowanie polskich nazw dni
+        day_map = {
+            'poniedziałek': 0, 'wtorek': 1, 'środa': 2, 
+            'czwartek': 3, 'piątek': 4, 'sobota': 5, 'niedziela': 6
+        }
+        
+        target_day_lower = target_day_name.lower()
+        target_weekday = day_map.get(target_day_lower)
+        
+        if target_weekday is None:
+            logger.error(f"❌ Nieprawidłowy dzień: {target_day_name}")
+            return []
+        
+        # Znajdź najbliższy dzień o tej nazwie
+        tz = pytz.timezone('Europe/Warsaw')
+        now = datetime.now(tz)
+        current_weekday = now.weekday()
+        
+        days_ahead = (target_weekday - current_weekday) % 7
+        if days_ahead == 0 and now.hour >= 18:  # Po 18:00 - następny tydzień
+            days_ahead = 7
+        elif days_ahead == 0:  # Dziś, ale wcześnie
+            pass
+            
+        target_date = now + timedelta(days=days_ahead)
+        
+        logger.info(f"🔍 Szukam terminów na: {target_date.strftime('%Y-%m-%d')} ({target_day_name})")
+        
+        # Pobierz wszystkie sloty dla tego dnia
+        day_slots = calendar_service._get_day_available_slots(target_date, slot_duration)
+        
+        # Sortuj po godzinie
+        day_slots.sort(key=lambda x: x['datetime'])
+        
+        logger.info(f"✅ Znaleziono {len(day_slots)} wolnych terminów na {target_day_name}")
+        return day_slots
+        
+    except Exception as e:
+        logger.error(f"❌ Błąd pobierania terminów dla {target_day_name}: {e}")
         return []

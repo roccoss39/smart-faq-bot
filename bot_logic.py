@@ -455,36 +455,58 @@ def process_user_message(user_message, user_id=None):
             day_mentioned = extract_day_from_message(user_message)
             
             try:
-                slots = get_available_slots(days_ahead=10)
-                
                 if day_mentioned:
-                    day_slots = [slot for slot in slots if slot['day_name'] == day_mentioned]
-                    if day_slots:
-                        slots_text = '\n'.join([
-                            f"• {slot['display'].split()[-1]}"
-                            for slot in day_slots[:10]
-                        ])
-                        day_display = get_day_in_locative(day_mentioned)  # ← NOWA FUNKCJA
-                        return f"📅 **Wolne terminy {day_display}:**\n{slots_text}\n\n💬 Aby się umówić napisz:\n**\"Umawiam się na {day_mentioned.lower()} [godzina] na strzyżenie\"** ✂️"
-                    else:
-                        other_days = [slot for slot in slots if slot['day_name'] != day_mentioned][:5]
-                        if other_days:
-                            slots_text = '\n'.join([
-                                f"• {slot['day_name']} {slot['display'].split()[-1]}" 
-                                for slot in other_days
-                            ])
-                            return f"😔 Brak wolnych terminów w {day_mentioned.lower()}.\n\n📅 **Dostępne w inne dni:**\n{slots_text}\n\n📞 Lub zadzwoń: **123-456-789**"
-                        else:
-                            return f"😔 Brak wolnych terminów w {day_mentioned.lower()}.\n📞 Zadzwoń: **123-456-789**"
-                else:
+                    # 🔧 NOWE - pobierz WSZYSTKIE terminy dla konkretnego dnia
+                    from calendar_service import get_available_slots_for_day
+                    
+                    slots = get_available_slots_for_day(day_mentioned)
+                    
                     if slots:
-                        slots_text = '\n'.join([
-                            f"• {slot['day_name']} {slot['display'].split()[-1]}" 
-                            for slot in slots[:8]
-                        ])
-                        return f"📅 **Dostępne terminy:**\n{slots_text}\n\n💬 Napisz:\n**\"Umawiam się na [dzień] [godzina] na strzyżenie\"** ✂️"
+                        day_display = day_mentioned.capitalize()
+                        response = f"📅 **Wolne terminy w {day_display}:**\n"
+                        
+                        # Pogrupuj po godzinach
+                        hours = []
+                        for slot in slots:
+                            time_str = slot['datetime'].strftime('%H:%M')
+                            if time_str not in hours:
+                                hours.append(time_str)
+                        
+                        # Wyświetl wszystkie godziny w czytelnym formacie
+                        for hour in hours:
+                            response += f"• {hour}\n"
+                            
+                        response += f"\n💬 Aby się umówić napisz:\n*\"Umawiam się na {day_mentioned.lower()} [godzina] na [usługa]\"*"
+                        
+                        return response
                     else:
-                        return "😔 Brak wolnych terminów w najbliższych dniach.\n📞 Zadzwoń: **123-456-789**"
+                        return f"❌ **Brak wolnych terminów w {day_mentioned.capitalize()}**\n\nSprawdź inne dni lub zadzwoń: 123-456-789"
+                
+                else:
+                    # Pytanie ogólne - użyj obecnej logiki
+                    slots = get_available_slots(days_ahead=10)
+                    
+                    if slots:
+                        # Pogrupuj po dniach i pokaż po kilka z każdego
+                        from collections import defaultdict
+                        slots_by_day = defaultdict(list)
+                        
+                        for slot in slots:
+                            day_name = slot['day_name']
+                            slots_by_day[day_name].append(slot)
+                        
+                        response = "📅 **Dostępne terminy:**\n"
+                        for day_name, day_slots in list(slots_by_day.items())[:5]:  # Max 5 dni
+                            response += f"• **{day_name}**: "
+                            times = [slot['datetime'].strftime('%H:%M') for slot in day_slots[:4]]  # Max 4 czasy z dnia
+                            response += ", ".join(times)
+                            response += "\n"
+                        
+                        response += "\n💬 Aby sprawdzić konkretny dzień napisz:\n*\"godziny w środę\"* lub *\"wolne terminy w piątek\"*"
+                        
+                        return response
+                    else:
+                        return "❌ **Brak dostępnych terminów**\n\nSpróbuj później lub zadzwoń: 123-456-789"
                         
             except Exception as e:
                 logger.error(f"❌ Błąd pobierania terminów: {e}")
@@ -719,7 +741,6 @@ def analyze_intent_regex_only(user_message):
     
     if has_day and has_time:
         return "BOOKING"
-    
     # 4. ASK_AVAILABILITY - PRZED OTHER_QUESTION!
     if 'kiedy można przyjść' in message:
         return "ASK_AVAILABILITY"
