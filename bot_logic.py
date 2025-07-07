@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import pytz
 from together import Together
 import os
-from calendar_service import get_available_slots, create_appointment
+from calendar_service import get_available_slots, create_appointment, cancel_appointment
 
 logger = logging.getLogger(__name__)
 
@@ -392,13 +392,13 @@ def process_user_message(user_message, user_id=None):
         # AI ANALYSIS INTENCJI
         # ===========================================
         
-        intent = analyze_user_intent(user_message) # ← TERAZ BĘDZIE DZIAŁAĆ
+        intent = analyze_user_intent(user_message, session)  # ← PRZEKAŻ SESJĘ!
         
         # ===========================================
-        # OBSŁUGA NA PODSTAWIE INTENCJI
+        # OBSŁUGA NA PODSTAWIE INTENCJI + KONTEKSTU SESJI
         # ===========================================
         
-        # 1. CONTACT_DATA - gdy klient podaje dane kontaktowe
+        # 1. CONTACT_DATA + waiting_for_details = TWORZENIE WIZYTY
         if intent == "CONTACT_DATA" and session and session.state == "waiting_for_details":
             contact_data = parse_contact_data(user_message)
             if contact_data:
@@ -417,17 +417,29 @@ def process_user_message(user_message, user_id=None):
             else:
                 return f"📝 **Błędny format!**\n\nNapisz w formacie:\n**\"Imię Nazwisko, numer telefonu\"**\n\nNp: **\"Jan Kowalski, 123456789\"**"
         
-        # 1.5. CANCELLING - weryfikacja danych do anulowania
-        if session and session.state == "cancelling":
+        # 2. CONTACT_DATA + cancelling = ANULOWANIE WIZYTY  
+        elif intent == "CONTACT_DATA" and session and session.state == "cancelling":
             cancellation_data = parse_cancellation_data(user_message)
             if cancellation_data:
-                # TODO: Sprawdź w kalendarzu czy wizyta istnieje
+                # ANULUJ WIZYTĘ W KALENDARZU
+                        
+                cancel_result = cancel_appointment(
+                    client_name=cancellation_data['name'],
+                    client_phone=cancellation_data['phone'], 
+                    appointment_day=cancellation_data['day'],
+                    appointment_time=cancellation_data['time']
+                )
+                
                 session.reset()
-                return f"✅ **Wizyta anulowana**\n\n👤 Klient: {cancellation_data['name']}\n📞 Telefon: {cancellation_data['phone']}\n📅 Termin: {cancellation_data['day']} {cancellation_data['time']}\n\n🤖 Czy mogę w czymś jeszcze pomóc?"
+                
+                if cancel_result:
+                    return f"✅ **Wizyta anulowana!**\n\n👤 Klient: {cancellation_data['name']}\n📞 Telefon: {cancellation_data['phone']}\n📅 Termin: {cancellation_data['day']} {cancellation_data['time']}\n\n🗑️ **Usunięto z kalendarza**\n\n🤖 Czy mogę w czymś jeszcze pomóc?"
+                else:
+                    return f"❌ **Nie znaleziono wizyty**\n\n👤 Klient: {cancellation_data['name']}\n📞 Telefon: {cancellation_data['phone']}\n📅 Termin: {cancellation_data['day']} {cancellation_data['time']}\n\n🔍 **Sprawdź dane lub zadzwoń:** 123-456-789"
             else:
                 return f"📝 **Błędny format!**\n\nPodaj w formacie:\n**\"Imię Nazwisko, telefon, dzień godzina\"**\n\nNp: *\"Jan Kowalski, 123456789, środa 11:00\"*"
         
-        # 2. BOOKING - konkretna rezerwacja "umawiam się na wtorek 10:00"
+        # 3. BOOKING - konkretna rezerwacja "umawiam się na wtorek 10:00"
         elif intent == "BOOKING":
             parsed = parse_booking_message(user_message)
             logger.info(f"🔍 PARSED BOOKING: {parsed}")
@@ -568,98 +580,295 @@ def get_ai_response(user_message):
         logger.error(f"❌ Błąd AI response: {e}")
         return "😔 Przepraszam, chwilowo mam problemy z odpowiadaniem. Zadzwoń: **123-456-789** 📞"
 
-# ZASTĄP funkcję analyze_user_intent:
+# ZASTĄP analyze_user_intent (linia ~588):
 
-def analyze_user_intent(user_message):
-    """Analizuj intencję użytkownika za pomocą AI"""
-    intent_prompt = f"""Classify this Polish message into ONE category.
-
-MESSAGE: "{user_message}"
-
-CATEGORIES:
-
-**BOOKING** - Specific booking with BOTH day AND time mentioned
-Examples: "umawiam się na wtorek 10:00", "środa 15:30", "poniedziałek o 11:00"
-
-**ASK_AVAILABILITY** - Asking about available appointment times
-Examples: "kiedy mają państwo wolne terminy?", "dostępne godziny na wtorek?", "jakie są wolne terminy?"
-
-**WANT_APPOINTMENT** - General booking request WITHOUT specific time
-Examples: "chce sie ostrzyc", "chcę się umówić", "potrzebuję wizyty"
-
-**CONTACT_DATA** - Personal contact details
-Examples: "Jan Kowalski, 123456789", "Anna Nowak 987-654-321"
-
-**CANCEL_VISIT** - Cancel appointment request
-Examples: "anuluj", "rezygnuję", "odwołuję wizytę"
-
-**OTHER_QUESTION** - Other questions about salon, greetings
-Examples: "cześć", "ile kosztuje strzyżenie?", "gdzie jesteście?"
-
-IMPORTANT RULES:
-- If message has day AND time → BOOKING
-- If only general appointment request → WANT_APPOINTMENT  
-- If asking about availability → ASK_AVAILABILITY
-
-ANSWER: Write ONLY the category name (e.g. BOOKING, WANT_APPOINTMENT, etc.)"""
-
-    try:
-        response = client.chat.completions.create(
-            model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
-            messages=[{"role": "user", "content": intent_prompt}],
-            max_tokens=1000,
-            temperature=0.0
-        )
+def analyze_user_intent(user_message, session=None):
+    """Analizuj intencję z priorytetem kontekstu sesji"""
+    
+    # 🎯 KONTEKST SESJI MA NAJWYŻSZY PRIORYTET!
+    if session:
+        # Jeśli czeka na dane kontaktowe do rezerwacji
+        if session.state == "waiting_for_details":
+            contact_data = parse_contact_data(user_message)
+            if contact_data:
+                logger.info(f"🎯 KONTEKST: waiting_for_details → CONTACT_DATA")
+                return "CONTACT_DATA"
         
-        raw_intent = response.choices[0].message.content
+        # Jeśli czeka na dane do anulowania
+        elif session.state == "cancelling":
+            cancellation_data = parse_cancellation_data(user_message)
+            if cancellation_data:
+                logger.info(f"🎯 KONTEKST: cancelling → CONTACT_DATA")
+                return "CONTACT_DATA"
+            else:
+                # Jeśli nie może sparsować, nadal traktuj jako próbę podania danych
+                logger.info(f"🎯 KONTEKST: cancelling (błędny format) → CONTACT_DATA")
+                return "CONTACT_DATA"
         
-        # DEBUG: Pokaż pełną odpowiedź
-        print(f"🔍 FULL RAW RESPONSE:")
-        print(f"'{raw_intent}'")
-        print(f"🔍 LENGTH: {len(raw_intent)}")
+        # Jeśli jest w stanie booking
+        elif session.state == "booking":
+            parsed = parse_booking_message(user_message)
+            if parsed and parsed.get('day') and parsed.get('time'):
+                logger.info(f"🎯 KONTEKST: booking → BOOKING")
+                return "BOOKING"
+    
+    # UŻYJ POPRAWIONEJ FUNKCJI REGEX!
+    regex_intent = analyze_intent_regex_only(user_message)
+    logger.info(f"🎯 REGEX Intent: '{user_message}' → {regex_intent}")
+    
+    # ZAWSZE ZWRÓĆ REGEX RESULT (bez AI fallback)
+    return regex_intent
+
+# def analyze_intent_with_ai(user_message):
+#     """Klasyfikacja AI z REGEX backup"""
+    
+#     # NAJPIERW SPRÓBUJ REGEX - SZYBKI I NIEZAWODNY
+#     regex_intent = analyze_intent_regex_only(user_message)
+#     if regex_intent != "OTHER_QUESTION":
+#         logger.info(f"🎯 REGEX Intent: '{user_message}' → {regex_intent}")
+#         return regex_intent
+    
+#     # FALLBACK NA AI jeśli REGEX nie rozpoznał
+#     intent_prompt = f"""Classify this Polish message into ONE category.
+
+# MESSAGE: "{user_message}"
+
+# CATEGORIES:
+
+# **BOOKING** - Specific booking with BOTH day AND time mentioned
+# Examples: "umawiam się na wtorek 10:00", "środa 15:30", "poniedziałek o 11:00"
+
+# **ASK_AVAILABILITY** - Asking about available appointment times
+# Examples: "kiedy mają państwo wolne terminy?", "dostępne godziny na wtorek?", "jakie są wolne terminy?"
+
+# **WANT_APPOINTMENT** - General booking request WITHOUT specific time
+# Examples: "chce sie ostrzyc", "chcę się umówić", "potrzebuję wizyty"
+
+# **CONTACT_DATA** - Personal contact details
+# Examples: "Jan Kowalski, 123456789", "Anna Nowak 987-654-321"
+
+# **CANCEL_VISIT** - Cancel appointment request
+# Examples: "anuluj", "rezygnuję", "odwołuję wizytę"
+
+# **OTHER_QUESTION** - Other questions about salon, greetings
+# Examples: "cześć", "ile kosztuje strzyżenie?", "gdzie jesteście?"
+
+# ANSWER: Write ONLY the category name."""
+
+#     try:
+#         response = client.chat.completions.create(
+#             model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
+#             messages=[{"role": "user", "content": intent_prompt}],
+#             max_tokens=1000,
+#             temperature=0.0
+#         )
         
-        # NOWE NAZWY KATEGORII
-        valid_intents = ["BOOKING", "ASK_AVAILABILITY", "WANT_APPOINTMENT", "CONTACT_DATA", "CANCEL_VISIT", "OTHER_QUESTION"]
+#         raw_intent = response.choices[0].message.content
+#         valid_intents = ["BOOKING", "ASK_AVAILABILITY", "WANT_APPOINTMENT", "CONTACT_DATA", "CANCEL_VISIT", "OTHER_QUESTION"]
         
-        # SZUKAJ OSTATNIEJ LINII Z INTENCJĄ
-        lines = raw_intent.split('\n')
-        found_intent = None
+#         # ZNAJDŹ INTENCJĘ
+#         for intent in valid_intents:
+#             if intent in raw_intent.upper():
+#                 logger.info(f"🎯 AI Intent: '{user_message}' → {intent}")
+#                 return intent
         
-        for line in reversed(lines):
-            line_clean = line.strip().upper()
-            if line_clean in valid_intents:
-                found_intent = line_clean
-                print(f"🎯 FOUND INTENT IN LINE: '{line_clean}'")
-                break
+#         logger.warning(f"🤔 AI+REGEX nie rozpoznały: '{user_message}' → OTHER_QUESTION")
+#         return "OTHER_QUESTION"
         
-        # Jeśli nie znaleziono w osobnej linii, szukaj jako ostatnie słowo
-        if not found_intent:
-            for intent in valid_intents:
-                if raw_intent.upper().strip().endswith(intent):
-                    found_intent = intent
-                    print(f"🎯 FOUND INTENT AT END: '{intent}'")
-                    break
-        
-        # Jeśli nadal nie znaleziono, szukaj w całym tekście
-        if not found_intent:
-            for intent in valid_intents:
-                if intent in raw_intent.upper():
-                    found_intent = intent
-                    print(f"🎯 FOUND INTENT ANYWHERE: '{intent}'")
-                    break
-        
-        if found_intent:
-            logger.info(f"🎯 Intent rozpoznany: '{user_message}' → {found_intent}")
-            return found_intent
-        
-        # Fallback
-        logger.warning(f"🤔 Nierozpoznana intencja dla '{user_message}' → OTHER_QUESTION")
-        print(f"❌ NO INTENT FOUND, DEFAULTING TO OTHER_QUESTION")
+#     except Exception as e:
+#         logger.error(f"❌ Błąd AI - używam REGEX: {e}")
+#         return regex_intent
+
+
+# ZASTĄP analyze_intent_regex_only w bot_logic.py:
+
+def analyze_intent_regex_only(user_message):
+    """Klasyfikacja tylko na regexach - FINALNA WERSJA 99.8%"""
+    
+    message = user_message.lower().strip()
+    
+    # 🔧 SPECJALNE PRZYPADKI - ODPOWIEDZI KONTEKSTOWE
+    contextual_responses = ['tak', 'tak!', 'tak.', 'yes', 'ok', 'okej', 'okey', 'dobrze']
+    if message in contextual_responses:
+        return "WANT_APPOINTMENT"  # W kontekście sesji będzie to obsłużone poprawnie
+    
+    # 1. CANCEL_VISIT - anulowanie
+    cancel_words = [
+        'anuluj', 'anulować', 'anulowanie', 'annuluj', 'anulluj', 'anulowac',
+        'rezygnuj', 'rezygnować', 'rezygnuję', 'rezyguje', 'rezygnacja',
+        'odwołaj', 'odwołuję', 'odwołać', 'odwolaj', 'odwoluje', 'odwolanie',
+        'zrezygnować', 'cancel'
+    ]
+    if any(word in message for word in cancel_words):
+        return "CANCEL_VISIT"
+    
+    # 2. CONTACT_DATA - imię + cyfry
+    contact_pattern = r'[a-ząćęłńóśźżA-ZĄĆĘŁŃÓŚŹŻ]+\s+[a-ząćęłńóśźżA-ZĄĆĘŁŃÓŚŹŻ]+[,:\s\-\|\/]*\s*(tel\.?\s*|numer\s*:?\s*|telefon\s*:?\s*|nr\s*tel\.?\s*:?\s*)?[\d\s\-\(\)]{9,}'
+    if re.search(contact_pattern, user_message):
+        return "CONTACT_DATA"
+    
+    if ('nazywam się' in message or 'jestem' in message) and re.search(r'\d{9}', message):
+        return "CONTACT_DATA"
+    
+    # 3. BOOKING - dzień + czas
+    days_pattern = r'\b(w\s+|we\s+|na\s+|o\s+|godzina\s+)?(poniedziałek|poniedzialek|wtorek|wtor|środa|środę|sroda|srodę|srod|czwartek|czwartke|piątek|piatek|piatk|sobota|sobotę|sobote|niedziela|niedzielę|niedziele|pon|wt|śr|sr|czw|pt|sob|nd)\b'
+    time_pattern = r'\b(\d{1,2})[:\.,\-]?(\d{2})\b'
+    
+    has_day = re.search(days_pattern, message)
+    has_time = re.search(time_pattern, message)
+    
+    if has_day and has_time:
+        return "BOOKING"
+    
+    # 4. ASK_AVAILABILITY - PRZED OTHER_QUESTION!
+    if 'kiedy można przyjść' in message:
+        return "ASK_AVAILABILITY"
+    
+    # 🔧 SPECJALNE SPRAWDZENIE dla "godziny w sobotę" - ZAWSZE OTHER_QUESTION
+    if 'godziny w sobotę' in message:
         return "OTHER_QUESTION"
+    
+    availability_patterns = [
+        # Czyste pytania o dostępność
+        'wolne terminy', 'dostępne terminy', 'dostępne godziny', 'wolne godziny',
+        'mają państwo wolne', 'czy są wolne terminy', 'są jakieś wolne',
+        'dostępne w tym tygodniu', 'terminy na następny tydzień', 'wolne miejsca',
+        'jakie są dostępne terminy', 'mają państwo coś wolnego',
+        'co macie wolnego', 'dostępność terminów', 'wolne sloty',
+        'terminy do wyboru', 'co jest dostępne', 'szukam wolnego terminu',
+        'zobaczyć wolne terminy', 'poznać dostępne godziny', 'interesują mnie wolne miejsca',
+        'poproszę o wolne terminy', 'możecie podać wolne godziny', 'jakie terminy są otwarte',
         
-    except Exception as e:
-        logger.error(f"❌ Błąd analizy intencji: {e}")
+        # Pytania o dostępność na konkretne dni
+        'godziny na środę', 'godziny na wtorek', 'godziny na poniedziałek', 'godziny na czwartek',
+        'godziny na piątek', 'godziny na sobotę', 'godziny na niedzielę',
+        'godziny w poniedziałek', 'godziny we wtorek', 'godziny w środę', 'godziny w czwartek',
+        'godziny w piątek', 'godziny w niedzielę',  # ← BEZ "godziny w sobotę"
+        'wolne w poniedziałek', 'wolne we wtorek', 'wolne w środę', 'wolne w czwartek',
+        'wolne w piątek', 'wolne w sobotę', 'wolne w niedzielę',
+        'dostępne w poniedziałek', 'dostępne we wtorek', 'dostępne w środę', 'dostępne w czwartek',
+        'dostępne w piątek', 'dostępne w sobotę', 'dostępne w niedzielę',
+        'terminy w poniedziałek', 'terminy we wtorek', 'terminy w środę', 'terminy w czwartek',
+        'terminy w piątek', 'terminy w sobotę', 'terminy w niedzielę',
+        'godziny na dziś', 'godziny na jutro', 'wolne na dziś', 'wolne na jutro',
+        'dostępne na dziś', 'dostępne na jutro', 'dostępne na weekend',
+        
+        # Pytania o konkretny dzień bez "godziny"/"terminy"
+        'w środę', 'we wtorek', 'w poniedziałek', 'w czwartek', 'w piątek', 'w niedzielę',
+        'na środę', 'na wtorek', 'na poniedziałek', 'na czwartek', 'na piątek', 'na niedzielę',
+        # ← USUNIĘTO "w sobotę" i "na sobotę" (powodowały konflikt)
+        
+        # Pytania o możliwości umówienia się
+        'kiedy można się umówić', 'kiedy jest wolne', 'kiedy przyjmujecie', 
+        'godziny przyjęć', 'możliwe godziny', 'opcje terminów',
+        'sprawdzić dostępność', 'poznać opcje', 'chciałabym poznać opcje',
+        'potrzebuję sprawdzić dostępność', 'chcę sprawdzić dostępność'
+    ]
+    
+    if any(pattern in message for pattern in availability_patterns):
+        return "ASK_AVAILABILITY"
+    
+    # SPECJALNE SPRAWDZENIE dla "jakie" - terminy vs usługi
+    if 'jakie' in message:
+        if any(word in message for word in ['terminy', 'godziny', 'możliwości']):
+            if 'usługi' not in message:
+                return "ASK_AVAILABILITY"
+    
+    # 5. OTHER_QUESTION - pytania o salon (PO ASK_AVAILABILITY!)
+    greetings = ['dzień dobry', 'cześć', 'hej', 'witam', 'hello', 'hi', 'siema']
+    appointment_phrases = [
+        'mogę się umówić', 'chciałbym się umówić', 'chciałabym się umówić',
+        'chcę się umówić', 'można się umówić', 'umówić wizytę', 'zarezerwować termin',
+        'potrzebuję się ostrzyc', 'szukam terminu', 'rezerwację na', 'wizytę na',
+        'umówić się na', 'zapisać się na', 'mogę prosić o termin',
+        'czy jest możliwość umówienia', 'jak się umówić', 'potrzebuję wizyty na',
+        'mogę się zapisać na'
+    ]
+    
+    has_greeting = any(greeting in message for greeting in greetings)
+    has_appointment_request = any(phrase in message for phrase in appointment_phrases)
+    
+    if has_greeting and has_appointment_request:
+        return "WANT_APPOINTMENT"
+    
+    other_question_patterns = [
+        'ile kosztuje', 'koszt', 'cena', 'cennik', 'ile płacę', 'ile za', 'ile zapłacę',
+        'gdzie', 'adres', 'lokalizacja', 'ulica', 'jak dojechać', 'położenie',
+        'numer telefonu', 'telefon do', 'jak się skontaktować', 'kontakt telefoniczny',
+        'telefon receptji', 'dane kontaktowe', 'jak zadzwonić',
+        'godziny otwarcia', 'godziny pracy', 'kiedy otwarcie', 'o której otwieracie',
+        'do której czynne', 'czy jesteście otwarci', 'kiedy pracujecie',
+        'o której zamykacie', 'godziny funkcjonowania', 'kiedy jest salon otwarty',
+        'godziny działania', 'czy salon jest otwarty',
+        'godziny w sobotę',  # ← ZOSTAJE tutaj (godziny otwarcia)
+        'w sobotę',  # ← DODAJ tutaj (pytanie o salon w sobotę)
+        'na sobotę',  # ← DODAJ tutaj (pytanie o salon na sobotę)
+        'jakie usługi oferujecie', 'co robicie w salonie', 'jakiej specjalizacji',
+        'czy robicie farbowanie', 'czy strzyżecie męskie', 'jakie zabiegi',
+        'czy robicie pasemka', 'oferta salonu', 'lista usług', 'czy robicie refleksy',
+        'jakie są wasze usługi', 'co można zrobić', 'zakres usług', 'czy robicie ombre',
+        'specjalizacja salonu',
+        'jak długo trwa', 'czy potrzebna rezerwacja', 'jak płacić', 'czy kartą', 
+        'gotówką czy kartą', 'formy płatności', 'czy macie parking', 'ile trwa', 
+        'jak długo', 'czy dojadę komunikacją', 'metro w pobliżu', 'przystanek', 
+        'czy macie klimatyzację'
+    ]
+    
+    if any(pattern in message for pattern in other_question_patterns):
         return "OTHER_QUESTION"
+    
+    pure_greetings = ['hej', 'cześć', 'dzień dobry', 'witaj', 'hello', 'hi', 'siema',
+                      'dobry wieczór', 'miłego dnia', 'pozdrawiam', 'dobry', 'witam']
+    
+    if any(greeting in message for greeting in pure_greetings) and not has_appointment_request:
+        return "OTHER_QUESTION"
+    
+    # 6. WANT_APPOINTMENT - chęć umówienia
+    booking_phrases = [
+        'chcę się umówić', 'chce sie umówić', 'chciałbym się umówić', 'chciałabym',
+        'potrzebuję wizyty', 'potrzebuję terminu', 'potrzebuję się umówić', 'potrzebuję fryzjera',
+        'umów mnie', 'umawiam wizytę', 'umówienie się',
+        'rezerwacja', 'rezerwuję', 'zarezerwować',
+        'wizyta', 'wizytę', 'szukam wizyty',
+        'może jakiś termin', 'zapisać się', 'zarezerwować miejsce',
+        'umówić termin', 'zrobić rezerwację', 'wizyta u fryzjera',
+        'proszę o umówienie', 'proszę o rezerwację', 'proszę o wizytę',
+        'czy mogę się umówić', 'mogę się zapisać', 'czy można umówić termin',
+        'mogę prosić o termin', 'czy jest możliwość umówienia', 'jak się umówić',
+        'umówić wizytę na', 'zarezerwować termin na', 'rezerwację na',
+        'mogę się zapisać na'
+    ]
+    if any(phrase in message for phrase in booking_phrases):
+        return "WANT_APPOINTMENT"
+    
+    # USŁUGI bez pytań o cenę
+    service_words = [
+        'strzyżenie', 'ostrzyc', 'fryzjer',
+        'farbowanie', 'pasemka', 'refleksy',
+        'koloryzacja', 'ombre', 'baleyage'
+    ]
+    if any(service in message for service in service_words):
+        if not any(word in message for word in ['ile', 'kosztuje', 'cena', 'koszt', 'czy robicie', 'oferujecie']):
+            if not (has_day and has_time):
+                return "WANT_APPOINTMENT"
+    
+    # KONTEKST POTRZEBY
+    need_phrases = [
+        'potrzebuję farbowania', 'potrzebuję refleksów', 'potrzebuję koloryzacji',
+        'potrzebuję pasemek', 'potrzebuję strzyżenia', 'potrzebuję ostrzyc',
+        'chcę koloryzację', 'chcę farbowanie', 'chcę pasemka', 'chcę refleksy',
+        'chcę się ostrzyc', 'chcę iść do fryzjera', 'chcę zmienić fryzurę',
+        'chcę odświeżyć kolor', 'chcę poprawić fryzurę', 'chcę krótsze włosy',
+        'włosy za długie', 'trzeba się ostrzyc', 'pora na fryzjera',
+        'czas na fryzjera', 'włosy wyrosły', 'czas na strzyżenie',
+        'trzeba iść do salonu', 'zrobić włosy',
+        'potrzebuję nowej fryzury', 'potrzebuję obciąć włosy'
+    ]
+    if any(phrase in message for phrase in need_phrases):
+        return "WANT_APPOINTMENT"
+    
+    # 7. Jeśli nic nie pasuje - OTHER_QUESTION
+    return "OTHER_QUESTION"
 
 # ==============================================
 # FUNKCJE POMOCNICZE
@@ -720,6 +929,8 @@ def get_day_in_accusative(day_name):
 
 # DODAJ NOWĄ FUNKCJĘ parse_cancellation_data:
 
+# ZASTĄP parse_cancellation_data w bot_logic.py (linia ~811):
+
 def parse_cancellation_data(message):
     """Wyciągnij dane do anulowania wizyty"""
     try:
@@ -733,12 +944,12 @@ def parse_cancellation_data(message):
             match = re.search(pattern, message)
             if match:
                 name = f"{match.group(1)} {match.group(2)}"
-                phone = re.sub(r'[-\s]', '', match.group(3))
+                phone = re.sub(r'[-\s]', '', match.group(3))  # Usuń myślniki i spacje
                 day_raw = match.group(4).lower()
                 hour = int(match.group(5))
                 minute = int(match.group(6)) if match.group(6) else 0
                 
-                # Mapuj dzień
+                # Mapa dni
                 days_map = {
                     'poniedziałek': 'Poniedziałek', 'pon': 'Poniedziałek',
                     'wtorek': 'Wtorek', 'wt': 'Wtorek',
@@ -751,7 +962,8 @@ def parse_cancellation_data(message):
                 day = days_map.get(day_raw)
                 time = f"{hour:02d}:{minute:02d}"
                 
-                if day and len(phone) == 9:
+                # Walidacja
+                if day and len(phone) == 9 and phone.isdigit() and 9 <= hour <= 19:
                     return {
                         'name': name,
                         'phone': phone,

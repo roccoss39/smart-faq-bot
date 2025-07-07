@@ -328,3 +328,149 @@ def create_appointment(client_name, client_phone, service_type, appointment_time
     return get_calendar_service().create_appointment(
         client_name, client_phone, service_type, appointment_time, duration_minutes
     )
+
+# DODAJ do calendar_service.py (na końcu pliku):
+
+def cancel_appointment(client_name, client_phone, appointment_day, appointment_time):
+    """Anuluj wizytę w kalendarzu Google"""
+    try:
+        calendar_service = get_calendar_service()
+        tz = pytz.timezone('Europe/Warsaw')
+        
+        # Konwertuj dzień na datetime
+        day_map = {
+            'Poniedziałek': 0, 'Wtorek': 1, 'Środa': 2, 
+            'Czwartek': 3, 'Piątek': 4, 'Sobota': 5
+        }
+        
+        target_day = day_map.get(appointment_day)
+        if target_day is None:
+            logger.error(f"❌ Nieprawidłowy dzień: {appointment_day}")
+            return False
+        
+        # Znajdź datę
+        now = datetime.now(tz)
+        days_ahead = (target_day - now.weekday()) % 7
+        if days_ahead == 0:  # Dzisiaj
+            days_ahead = 7  # Następny tydzień
+            
+        appointment_date = now + timedelta(days=days_ahead)
+        
+        # Ustaw godzinę
+        time_parts = appointment_time.split(':')
+        start_datetime = appointment_date.replace(
+            hour=int(time_parts[0]), 
+            minute=int(time_parts[1]), 
+            second=0, 
+            microsecond=0
+        )
+        
+        # Sprawdź wydarzenia w tym dniu
+        day_start = start_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = start_datetime.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        events = calendar_service.service.events().list(
+            calendarId=calendar_service.calendar_id,
+            timeMin=day_start.isoformat(),
+            timeMax=day_end.isoformat(),
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        
+        events_list = events.get('items', [])
+        
+        # Znajdź wizytę do anulowania
+        for event in events_list:
+            event_start = event['start'].get('dateTime')
+            if not event_start:
+                continue
+                
+            # Parsuj czas wydarzenia
+            event_datetime = datetime.fromisoformat(event_start.replace('Z', '+00:00'))
+            event_datetime = event_datetime.astimezone(tz)
+            
+            # Sprawdź czy to ta wizyta
+            summary = event.get('summary', '')
+            description = event.get('description', '')
+            
+            # Warunki dopasowania:
+            # 1. Ten sam czas
+            time_match = (event_datetime.hour == start_datetime.hour and 
+                         event_datetime.minute == start_datetime.minute)
+            
+            # 2. Imię w tytule lub opisie
+            name_match = client_name.lower() in summary.lower() or client_name.lower() in description.lower()
+            
+            # 3. Telefon w opisie
+            phone_match = client_phone in description
+            
+            if time_match and (name_match or phone_match):
+                # USUŃ WIZYTĘ
+                try:
+                    calendar_service.service.events().delete(
+                        calendarId=calendar_service.calendar_id,
+                        eventId=event['id']
+                    ).execute()
+                    
+                    logger.info(f"✅ Anulowano wizytę: {summary} - {event_start}")
+                    return {
+                        'success': True,
+                        'event_title': summary,
+                        'event_time': event_start,
+                        'event_id': event['id']
+                    }
+                    
+                except Exception as delete_error:
+                    logger.error(f"❌ Błąd usuwania wydarzenia: {delete_error}")
+                    return False
+        
+        # Nie znaleziono wizyty
+        logger.warning(f"❌ Nie znaleziono wizyty: {client_name}, {appointment_day} {appointment_time}")
+        return False
+        
+    except Exception as e:
+        logger.error(f"❌ Błąd anulowania wizyty: {e}")
+        return False
+
+def get_upcoming_appointments(days_ahead=14):
+    """Pobierz nadchodzące wizyty z kalendarza"""
+    try:
+        calendar_service = get_calendar_service()  # ← POPRAWKA: użyj get_calendar_service()
+        
+        if not calendar_service.service:
+            logger.error("❌ Calendar service nie jest zainicjalizowany")
+            return []
+        
+        # Zakres czasu
+        tz = pytz.timezone('Europe/Warsaw')
+        now = datetime.now(tz)
+        time_max = now + timedelta(days=days_ahead)
+        
+        # Pobierz wydarzenia
+        events_result = calendar_service.service.events().list(
+            calendarId=calendar_service.calendar_id,  # ← POPRAWKA: użyj calendar_id z instancji
+            timeMin=now.isoformat(),
+            timeMax=time_max.isoformat(),
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        
+        events = events_result.get('items', [])
+        
+        appointments = []
+        for event in events:
+            start = event['start'].get('dateTime', event['start'].get('date'))
+            appointments.append({
+                'id': event['id'],
+                'summary': event.get('summary', 'Bez tytułu'),
+                'start': start,
+                'description': event.get('description', ''),
+                'location': event.get('location', '')
+            })
+        
+        logger.info(f"📅 Pobrano {len(appointments)} wizyt z kalendarza")
+        return appointments
+        
+    except Exception as e:
+        logger.error(f"❌ Błąd pobierania wizyt: {e}")
+        return []
