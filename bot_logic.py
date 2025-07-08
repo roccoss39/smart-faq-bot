@@ -66,7 +66,18 @@ KOLORYZACJA:
 - Pasemka/refleksy: 150-250 zł
 
 Odpowiadaj TYLKO po polsku. Bądź pomocny i empatyczny.
-Pamiętaj: NIE pokazuj procesu myślowego!
+WAŻNE ZASADY ODPOWIEDZI:
+1. Bądź przyjazny, profesjonalny i pomocny
+2. Używaj emoji do ożywienia rozmowy
+3. 🔥 ZAWSZE na końcu zachęć do umówienia wizyty jednym z tych sposobów:
+   - "Chcesz się umówić? Napisz: 'chcę się umówić' 📅"
+   - "Mogę pomóc ci zarezerwować termin! Wystarczy napisać 'umów mnie' ✨"
+   - "Gotowy na wizytę? Napisz 'wolne terminy' aby sprawdzić dostępność! 💫"
+   - "Zainteresowany? Napisz 'chcę się umówić' a pokażę dostępne terminy! 🎯"
+4. Jeśli pytanie dotyczy cen/usług - ZAWSZE dodaj zachętę do rezerwacji
+5. Odpowiadaj krótko (max 100 słów) + zachęta do umówienia
+
+Odpowiedz naturalnie i profesjonalnie na pytanie klienta.
 """
 
 # ==============================================
@@ -545,9 +556,21 @@ def process_user_message(user_message, user_id=None):
                     session.state = "cancelling"
                 return f"❌ **Anulowanie wizyty**\n\n🔍 Aby anulować wizytę, podaj:\n• 👤 **Imię i nazwisko**\n• 📞 **Numer telefonu**\n• 📅 **Dzień i godzinę wizyty**\n\nNp: *\"Jan Kowalski, 123456789, środa 11:00\"*"
         
-        # 6. OTHER_QUESTION - standardowa rozmowa AI
+        # 6. OTHER_QUESTION - standardowa rozmowa AI + MENU NA POWITANIE
         else:  # OTHER_QUESTION
-            return get_ai_response(user_message)
+            # 🔧 NOWE - MENU OPCJI DLA POWITAŃ
+            greeting_patterns = [
+                'hej', 'cześć', 'dzień dobry', 'witaj', 'hello', 'hi', 'siema',
+                'dobry wieczór', 'miłego dnia', 'pozdrawiam', 'dobry', 'witam'
+            ]
+            
+            message_lower = user_message.lower().strip()
+            is_greeting = any(greeting in message_lower for greeting in greeting_patterns)
+            
+            if is_greeting and len(user_message.strip()) <= 20: # Krótkie powitanie
+                return get_welcome_menu()
+            else:
+                return get_ai_response(user_message)
             
     except Exception as e:
         logger.error(f"❌ Błąd przetwarzania wiadomości: {e}")
@@ -576,6 +599,67 @@ def extract_day_from_message(message):
 
 def get_ai_response(user_message):
     """Standardowa odpowiedź AI"""
+    message_lower = user_message.lower().strip()
+    
+        # 🔧 NOWE - SZYBKIE ODPOWIEDZI NA MENU
+    quick_responses = {
+        'jakie usługi oferujecie': """✂️ **NASZE USŁUGI:**
+
+    **STRZYŻENIE:**
+    • Damskie: 80-120 zł
+    • Męskie: 50-70 zł  
+    • Dziecięce: 40 zł
+
+    **KOLORYZACJA:**
+    • Całościowe farbowanie: 120-180 zł
+    • Retusz odrostów: 80 zł
+    • Pasemka/refleksy: 150-250 zł
+
+    💫 **Chcesz się umówić?** Napisz: *'chcę się umówić'* 📅""",
+
+            'gdzie jesteście': """📍 **LOKALIZACJA:**
+
+    🏢 **Salon Fryzjerski "Kleopatra"**
+    📮 ul. Piękna 15, 00-001 Warszawa
+
+    🚇 **Dojazd:**
+    • Metro: Centrum (5 min pieszo)
+    • Autobus: 15, 18, 35 (przystanek Piękna)
+
+    🅿️ **Parking:** Publiczne miejsca w okolicy
+
+    💫 **Chcesz się umówić?** Napisz: *'chcę się umówić'* 📅""",
+
+            'godziny otwarcia': """🕐 **GODZINY OTWARCIA:**
+
+    📅 **Poniedziałek-Piątek:** 9:00-19:00
+    📅 **Sobota:** 9:00-16:00  
+    📅 **Niedziela:** Zamknięte
+
+    📞 **Kontakt:** 123-456-789
+    📧 **Email:** kontakt@salon-kleopatra.pl
+
+    💫 **Chcesz się umówić?** Napisz: *'chcę się umówić'* 📅""",
+
+            'kontakt': """📞 **KONTAKT:**
+
+    ☎️ **Telefon:** 123-456-789
+    📧 **Email:** kontakt@salon-kleopatra.pl
+    🌐 **Strona:** www.salon-kleopatra.pl
+
+    📍 **Adres:** ul. Piękna 15, Warszawa
+
+    🕐 **Godziny:** Pon-Pt 9:00-19:00, Sob 9:00-16:00
+
+    💫 **Chcesz się umówić?** Napisz: *'chcę się umówić'* 📅"""
+        }
+        
+        # Sprawdź szybkie odpowiedzi
+    for phrase, response in quick_responses.items():
+        if phrase in message_lower:
+            return response
+        
+
     try:
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -714,7 +798,40 @@ def analyze_intent_regex_only(user_message):
     if message in contextual_responses:
         return "WANT_APPOINTMENT"  # W kontekście sesji będzie to obsłużone poprawnie
     
-    # 1. CANCEL_VISIT - anulowanie
+        
+    # 🔧 NOWE - OBSŁUGA MENU OPCJI
+    menu_responses = {
+        # Informacje o salonie
+        'gdzie jesteście': 'OTHER_QUESTION',
+        'godziny otwarcia': 'OTHER_QUESTION', 
+        'kontakt': 'OTHER_QUESTION',
+        'jakie usługi oferujecie': 'OTHER_QUESTION',
+        'usługi': 'OTHER_QUESTION',
+        'ceny': 'OTHER_QUESTION',
+        'cennik': 'OTHER_QUESTION',
+        
+        # Terminarz
+        'wolne terminy': 'ASK_AVAILABILITY',
+        'dostępne terminy': 'ASK_AVAILABILITY',
+        'sprawdzić terminy': 'ASK_AVAILABILITY',
+        
+        # Rezerwacje
+        'chcę się umówić': 'WANT_APPOINTMENT',
+        'umów mnie': 'WANT_APPOINTMENT',
+        'rezerwacja': 'WANT_APPOINTMENT',
+        
+        # Anulowanie
+        'anuluj wizytę': 'CANCEL_VISIT',
+        'anuluj': 'CANCEL_VISIT',
+        'odwołaj': 'CANCEL_VISIT'
+    }
+    
+    # Sprawdź dokładne dopasowania menu
+    for phrase, intent in menu_responses.items():
+        if phrase in message:
+            return intent
+    
+        # 1. CANCEL_VISIT - anulowanie
     cancel_words = [
         'anuluj', 'anulować', 'anulowanie', 'annuluj', 'anulluj', 'anulowac',
         'rezygnuj', 'rezygnować', 'rezygnuję', 'rezyguje', 'rezygnacja',
@@ -733,7 +850,7 @@ def analyze_intent_regex_only(user_message):
         return "CONTACT_DATA"
     
     # 3. BOOKING - dzień + czas
-    days_pattern = r'\b(w\s+|we\s+|na\s+|o\s+|godzina\s+)?(poniedziałek|poniedzialek|wtorek|wtor|środa|środę|sroda|srodę|srod|czwartek|czwartke|piątek|piatek|piatk|sobota|sobotę|sobote|niedziela|niedzielę|niedziele|pon|wt|śr|sr|czw|pt|sob|nd)\b'
+    days_pattern = r'\b(w\s+|we\s+|na\s+|o\s+|godzina\s+)?(poniedziałek|poniedzialek|wtorek|wtor|środa|środę|sroda|srodę|srod|czwartek|czwartke|piątek|piatek|piatk|sobota|sobotę|niedziela|niedzielę|niedziele|pon|wt|śr|sr|czw|pt|sob|nd)\b'
     time_pattern = r'\b(\d{1,2})[:\.,\-]?(\d{2})\b'
     
     has_day = re.search(days_pattern, message)
@@ -846,7 +963,13 @@ def analyze_intent_regex_only(user_message):
     
     # 6. WANT_APPOINTMENT - chęć umówienia
     booking_phrases = [
-        'chcę się umówić', 'chce sie umówić', 'chciałbym się umówić', 'chciałabym',
+        # Wszystkie warianty "chcę/chce się umówić"
+        'chcę się umówić', 'chce się umówić',  # ✅ DODAJ TEN WARIANT!
+        'chce sie umówić', 'chcę sie umówić',  # bez ś
+        'chciałbym się umówić', 'chciałabym się umówić',
+        'chcialbym się umówić', 'chcialabym się umówić',  # bez ł
+        
+        # Inne warianty umówienia
         'potrzebuję wizyty', 'potrzebuję terminu', 'potrzebuję się umówić', 'potrzebuję fryzjera',
         'umów mnie', 'umawiam wizytę', 'umówienie się',
         'rezerwacja', 'rezerwuję', 'zarezerwować',
@@ -997,3 +1120,31 @@ def parse_cancellation_data(message):
     except Exception as e:
         logger.error(f"❌ Błąd parsowania anulowania: {e}")
         return None
+    
+def get_welcome_menu():
+    """Zwróć menu opcji dla nowych użytkowników"""
+    menu = """👋 **Witamy w Salonie Fryzjerskim "Kleopatra"**
+
+Miło Cię poznać! W czym możemy pomóc?
+
+📅 **Chcesz się umówić na wizytę?**
+Napisz: *"chcę się umówić"*
+
+🔍 **Chcesz sprawdzić wolne terminy?**
+Napisz: *"wolne terminy"*
+
+❌ **Chcesz anulować istniejącą wizytę?**
+Napisz: *"anuluj wizytę"*
+
+✂️ **Chcesz poznać nasze usługi i ceny?**
+Napisz: *"jakie usługi oferujecie?"*
+
+📍 **Chcesz dowiedzieć się więcej o salonie?**
+Napisz: *"gdzie jesteście?"* lub *"godziny otwarcia"*
+
+📞 **Kontakt bezpośredni:**
+Telefon: **123-456-789**
+
+💬 **Możesz też po prostu napisać o co Ci chodzi - zrozumiem!** 😊"""
+
+    return menu

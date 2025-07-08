@@ -13,7 +13,10 @@ import time
 from dotenv import load_dotenv
 
 # IMPORT LOGIKI BOTA
-from bot_logic import process_user_message, clean_thinking_response, SYSTEM_PROMPT, client
+# from bot_logic import process_user_message, clean_thinking_response, SYSTEM_PROMPT, client
+
+#AI VERSION (nowa)
+from bot_logic_ai import process_user_message
 
 # Załaduj zmienne z .env
 load_dotenv()
