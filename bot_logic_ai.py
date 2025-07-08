@@ -178,8 +178,85 @@ Odpowiedz tylko nazwą kategorii:"""
 # AI PARSOWANIE DANYCH - TAKŻE AI!
 # ==============================================
 
+
+def parse_contact_data_ai(message):
+    """ULTRA PRECYZYJNE AI parsowanie danych kontaktowych - Z CZYSZCZENIEM JSON"""
+    parse_prompt = f"""WYCIĄGNIJ DANE KONTAKTOWE Z WIADOMOŚCI:
+
+"{message}"
+
+SZUKAJ WZORCÓW:
+1. IMIĘ + NAZWISKO (każde słowo zaczyna się wielką literą)
+2. TELEFON (ciąg 9 cyfr, może mieć spacje/myślniki)
+
+AKCEPTOWANE FORMATY:
+✅ "Jan Kowalski 123456789"
+✅ "Anna Nowak, 987654321"  
+✅ "Piotr Wiśniewski tel. 555 666 777"
+✅ "Maria Kowalczyk telefon: 111-222-333"
+✅ "nazywam się Adam Nowak, numer 444555666"
+
+ODRZUCANE:
+❌ "chcę się umówić" (brak danych)
+❌ "Jan 123456789" (brak nazwiska)  
+❌ "Jan Kowalski" (brak telefonu)
+❌ "123456789" (brak imienia)
+
+INSTRUKCJE:
+- Znajdź pierwsze imię + nazwisko w tekście
+- Znajdź 9-cyfrowy numer telefonu (usuń spacje/myślniki)
+- Jeśli brak któregoś elementu → zwróć null
+
+FORMAT ODPOWIEDZI (tylko JSON, bez bloków kodu):
+{{"name": "Imię Nazwisko", "phone": "123456789"}}
+
+lub
+
+null"""
+
+    try:
+        response = client.chat.completions.create(
+            model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
+            messages=[{"role": "user", "content": parse_prompt}],
+            max_tokens=1000,
+            temperature=0.0
+        )
+        
+        raw_response = response.choices[0].message.content.strip()
+        cleaned_response = clean_thinking_response(raw_response)
+        
+        # 🔧 USUŃ BLOKI KODU MARKDOWN
+        cleaned_response = re.sub(r'```json\s*', '', cleaned_response)
+        cleaned_response = re.sub(r'```\s*', '', cleaned_response)
+        cleaned_response = cleaned_response.strip()
+        
+        import json
+        try:
+            # Sprawdź czy odpowiedź to null
+            if "null" in cleaned_response.lower():
+                logger.info(f"🔍 AI CONTACT: '{message}' → null (brak danych)")
+                return None
+                
+            # Spróbuj sparsować JSON
+            result = json.loads(cleaned_response)
+            if result and result.get('name') and result.get('phone'):
+                # Walidacja telefonu - tylko cyfry, dokładnie 9
+                phone = re.sub(r'[-\s().]', '', str(result['phone']))
+                if len(phone) == 9 and phone.isdigit():
+                    logger.info(f"🔍 AI CONTACT: '{message}' → {result}")
+                    return {'name': result['name'], 'phone': phone}
+        except json.JSONDecodeError as e:
+            logger.warning(f"🔍 AI CONTACT JSON error: {e}, cleaned: '{cleaned_response}'")
+            
+        logger.warning(f"🔍 AI CONTACT: '{message}' → nieprawidłowy format: '{cleaned_response}'")
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ Błąd AI parsowania kontaktu: {e}")
+        return None
+
 def parse_booking_message_ai(message):
-    """ULTRA PRECYZYJNE AI parsowanie szczegółów rezerwacji"""
+    """ULTRA PRECYZYJNE AI parsowanie szczegółów rezerwacji - Z CZYSZCZENIEM JSON"""
     parse_prompt = f"""WYCIĄGNIJ SZCZEGÓŁY REZERWACJI Z WIADOMOŚCI:
 
 "{message}"
@@ -214,7 +291,7 @@ MAPOWANIE USŁUG:
 - farbowanie/koloryzacja → "Farbowanie"
 - inne/brak → "Strzyżenie"
 
-FORMAT ODPOWIEDZI (tylko JSON):
+FORMAT ODPOWIEDZI (tylko JSON, bez bloków kodu):
 {{"day": "Dzień", "time": "HH:MM", "service": "Usługa"}}
 
 lub
@@ -231,6 +308,11 @@ null"""
         
         raw_response = response.choices[0].message.content.strip()
         cleaned_response = clean_thinking_response(raw_response)
+        
+        # 🔧 USUŃ BLOKI KODU MARKDOWN
+        cleaned_response = re.sub(r'```json\s*', '', cleaned_response)
+        cleaned_response = re.sub(r'```\s*', '', cleaned_response)
+        cleaned_response = cleaned_response.strip()
         
         import json
         try:
@@ -254,8 +336,8 @@ null"""
                         }
                         logger.info(f"🔍 AI BOOKING: '{message}' → {parsed_result}")
                         return parsed_result
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            logger.warning(f"🔍 AI BOOKING JSON error: {e}, cleaned: '{cleaned_response}'")
             
         logger.warning(f"🔍 AI BOOKING: '{message}' → nieprawidłowy format: '{cleaned_response}'")
         return None
@@ -264,76 +346,76 @@ null"""
         logger.error(f"❌ Błąd AI parsowania rezerwacji: {e}")
         return None
 
-def parse_contact_data_ai(message):
-    """ULTRA PRECYZYJNE AI parsowanie danych kontaktowych"""
-    parse_prompt = f"""WYCIĄGNIJ DANE KONTAKTOWE Z WIADOMOŚCI:
+# def parse_contact_data_ai(message):
+#     """ULTRA PRECYZYJNE AI parsowanie danych kontaktowych"""
+#     parse_prompt = f"""WYCIĄGNIJ DANE KONTAKTOWE Z WIADOMOŚCI:
 
-"{message}"
+# "{message}"
 
-SZUKAJ WZORCÓW:
-1. IMIĘ + NAZWISKO (każde słowo zaczyna się wielką literą)
-2. TELEFON (ciąg 9 cyfr, może mieć spacje/myślniki)
+# SZUKAJ WZORCÓW:
+# 1. IMIĘ + NAZWISKO (każde słowo zaczyna się wielką literą)
+# 2. TELEFON (ciąg 9 cyfr, może mieć spacje/myślniki)
 
-AKCEPTOWANE FORMATY:
-✅ "Jan Kowalski 123456789"
-✅ "Anna Nowak, 987654321"  
-✅ "Piotr Wiśniewski tel. 555 666 777"
-✅ "Maria Kowalczyk telefon: 111-222-333"
-✅ "nazywam się Adam Nowak, numer 444555666"
+# AKCEPTOWANE FORMATY:
+# ✅ "Jan Kowalski 123456789"
+# ✅ "Anna Nowak, 987654321"  
+# ✅ "Piotr Wiśniewski tel. 555 666 777"
+# ✅ "Maria Kowalczyk telefon: 111-222-333"
+# ✅ "nazywam się Adam Nowak, numer 444555666"
 
-ODRZUCANE:
-❌ "chcę się umówić" (brak danych)
-❌ "Jan 123456789" (brak nazwiska)  
-❌ "Jan Kowalski" (brak telefonu)
-❌ "123456789" (brak imienia)
+# ODRZUCANE:
+# ❌ "chcę się umówić" (brak danych)
+# ❌ "Jan 123456789" (brak nazwiska)  
+# ❌ "Jan Kowalski" (brak telefonu)
+# ❌ "123456789" (brak imienia)
 
-INSTRUKCJE:
-- Znajdź pierwsze imię + nazwisko w tekście
-- Znajdź 9-cyfrowy numer telefonu (usuń spacje/myślniki)
-- Jeśli brak któregoś elementu → zwróć null
+# INSTRUKCJE:
+# - Znajdź pierwsze imię + nazwisko w tekście
+# - Znajdź 9-cyfrowy numer telefonu (usuń spacje/myślniki)
+# - Jeśli brak któregoś elementu → zwróć null
 
-FORMAT ODPOWIEDZI (tylko JSON):
-{{"name": "Imię Nazwisko", "phone": "123456789"}}
+# FORMAT ODPOWIEDZI (tylko JSON):
+# {{"name": "Imię Nazwisko", "phone": "123456789"}}
 
-lub
+# lub
 
-null"""
+# null"""
 
-    try:
-        response = client.chat.completions.create(
-            model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
-            messages=[{"role": "user", "content": parse_prompt}],
-            max_tokens=1000,
-            temperature=0.0
-        )
+#     try:
+#         response = client.chat.completions.create(
+#             model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
+#             messages=[{"role": "user", "content": parse_prompt}],
+#             max_tokens=1000,
+#             temperature=0.0
+#         )
         
-        raw_response = response.choices[0].message.content.strip()
-        cleaned_response = clean_thinking_response(raw_response)
+#         raw_response = response.choices[0].message.content.strip()
+#         cleaned_response = clean_thinking_response(raw_response)
         
-        import json
-        try:
-            # Sprawdź czy odpowiedź to null
-            if "null" in cleaned_response.lower():
-                logger.info(f"🔍 AI CONTACT: '{message}' → null (brak danych)")
-                return None
+#         import json
+#         try:
+#             # Sprawdź czy odpowiedź to null
+#             if "null" in cleaned_response.lower():
+#                 logger.info(f"🔍 AI CONTACT: '{message}' → null (brak danych)")
+#                 return None
                 
-            # Spróbuj sparsować JSON
-            result = json.loads(cleaned_response)
-            if result and result.get('name') and result.get('phone'):
-                # Walidacja telefonu - tylko cyfry, dokładnie 9
-                phone = re.sub(r'[-\s().]', '', str(result['phone']))
-                if len(phone) == 9 and phone.isdigit():
-                    logger.info(f"🔍 AI CONTACT: '{message}' → {result}")
-                    return {'name': result['name'], 'phone': phone}
-        except json.JSONDecodeError:
-            pass
+#             # Spróbuj sparsować JSON
+#             result = json.loads(cleaned_response)
+#             if result and result.get('name') and result.get('phone'):
+#                 # Walidacja telefonu - tylko cyfry, dokładnie 9
+#                 phone = re.sub(r'[-\s().]', '', str(result['phone']))
+#                 if len(phone) == 9 and phone.isdigit():
+#                     logger.info(f"🔍 AI CONTACT: '{message}' → {result}")
+#                     return {'name': result['name'], 'phone': phone}
+#         except json.JSONDecodeError:
+#             pass
             
-        logger.warning(f"🔍 AI CONTACT: '{message}' → nieprawidłowy format: '{cleaned_response}'")
-        return None
+#         logger.warning(f"🔍 AI CONTACT: '{message}' → nieprawidłowy format: '{cleaned_response}'")
+#         return None
         
-    except Exception as e:
-        logger.error(f"❌ Błąd AI parsowania kontaktu: {e}")
-        return None
+#     except Exception as e:
+#         logger.error(f"❌ Błąd AI parsowania kontaktu: {e}")
+#         return None
 
 def parse_cancellation_data_ai(message):
     """AI parsowanie danych do anulowania"""
