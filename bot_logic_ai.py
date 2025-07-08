@@ -132,7 +132,7 @@ def get_user_session(user_id):
 # ==============================================
 
 def analyze_user_intent_ai(user_message, session=None):
-    """UPROSZCZONA AI KLASYFIKACJA Z CZYSZCZENIEM"""
+    """UPROSZONA AI KLASYFIKACJA Z CZYSZCZENIEM"""
     return analyze_user_intent_ai_robust(user_message, session)
     intent_prompt = f"""Wiadomość: "{user_message}"
 
@@ -565,59 +565,75 @@ def clean_thinking_response_enhanced(response_text):
     
     return cleaned.strip()
 
+# ZASTĄP w bot_logic_ai.py funkcję analyze_user_intent_ai_robust:
+
 def analyze_user_intent_ai_robust(user_message, session=None):
-    """NIEZAWODNA AI KLASYFIKACJA Z MULTIPLE FALLBACKS"""
+    """NIEZAWODNA AI KLASYFIKACJA Z KONTEKSTEM SESJI"""
     
-    # STRATEGIA 1: ULEPSONY PROMPT Z PRZYKŁADAMI
+    # 🔧 PRZYGOTUJ KONTEKST SESJI
+    session_context = ""
+    if session:
+        if session.state == "waiting_for_details":
+            session_context = "\n\n🎯 KONTEKST: Użytkownik ma już zarezerwowany termin, teraz podaje dane kontaktowe do potwierdzenia. Jeśli wiadomość zawiera imię+nazwisko+telefon → CONTACT_DATA"
+        elif session.state == "cancelling":
+            session_context = "\n\n🎯 KONTEKST: Użytkownik chce ANULOWAĆ wizytę. Jeśli podaje imię+nazwisko+telefon+termin → CONTACT_DATA (dane do anulowania). NIE klasyfikuj jako BOOKING!"
+        elif session.state == "booking":
+            session_context = "\n\n🎯 KONTEKST: Użytkownik jest w procesie rezerwacji."
+    
+    # STRATEGIA 1: ULEPSONY PROMPT Z KONTEKSTEM SESJI
     try:
         enhanced_prompt = f"""KLASYFIKUJ WIADOMOŚĆ UŻYTKOWNIKA:
 
-WIADOMOŚĆ: "{user_message}"
+WIADOMOŚĆ: "{user_message}"{session_context}
 
-KATEGORIE Z PRZYKŁADAMI:
+KATEGORIE - DOKŁADNE KRYTERIA:
 
-1. CONTACT_DATA - Dane kontaktowe (imię + nazwisko + telefon):
-   ✅ "Jan Kowalski, 123456789"
+1. CONTACT_DATA - MUSI zawierać WSZYSTKIE 3 elementy:
+   ✅ IMIĘ (zaczyna się wielką literą, tylko litery)
+   ✅ NAZWISKO (zaczyna się wielką literą, tylko litery)  
+   ✅ TELEFON (dokładnie 9 cyfr)
+   
+   Przykłady CONTACT_DATA:
+   ✅ "Jan Kowalski 123456789"
    ✅ "Anna Nowak tel. 987654321"
-   ✅ "Piotr Wiśniewski, numer: 555666777"
-   ❌ "chcę się umówić"
+   ✅ "Dawid Podziewski 222222222 czwartek 18"
+   ❌ "wtorek 10:00" (brak imienia/nazwiska/telefonu)
+   ❌ "Jan 123456789" (brak nazwiska)
 
-2. BOOKING - Konkretny termin (dzień + godzina):
-   ✅ "umawiam się na wtorek 10:00"
-   ✅ "środa 15:30 na strzyżenie"
-   ✅ "piątek o 14:00"
-   ❌ "chcę się umówić"
-   ❌ "wtorek" (brak godziny)
+2. BOOKING - MUSI zawierać dzień + czas BEZ danych osobowych:
+   ✅ "wtorek 10:00"
+   ✅ "środa 15:30" 
+   ✅ "umawiam się na piątek 14:00"
+   ❌ "Jan Kowalski wtorek 10:00" (ma dane osobowe = CONTACT_DATA)
+   ❌ "wtorek" (brak czasu)
 
-3. ASK_AVAILABILITY - Pytanie o dostępne terminy:
+3. ASK_AVAILABILITY - Pytania o terminy:
    ✅ "wolne terminy?"
    ✅ "godziny w środę?"
-   ✅ "kiedy można się umówić?"
-   ✅ "dostępne terminy w piątek?"
 
 4. WANT_APPOINTMENT - Chęć umówienia bez konkretnego terminu:
    ✅ "chcę się umówić"
    ✅ "potrzebuję wizyty"
-   ✅ "umów mnie"
-   ✅ "rezerwacja"
 
-5. CANCEL_VISIT - Anulowanie wizyty:
+5. CANCEL_VISIT - Ogólne anulowanie:
    ✅ "anuluj wizytę"
    ✅ "odwołaj termin"
-   ✅ "rezygnuję z wizyty"
 
-6. OTHER_QUESTION - Pozostałe (powitania, pytania o ceny, lokalizację):
+6. OTHER_QUESTION - Pozostałe:
    ✅ "cześć"
-   ✅ "ile kosztuje strzyżenie?"
-   ✅ "gdzie jesteście?"
-   ✅ "godziny otwarcia?"
+   ✅ "ile kosztuje?"
 
-ODPOWIEDZ TYLKO NAZWĄ KATEGORII (bez myślenia na głos):"""
+ALGORYTM KLASYFIKACJI:
+1. Sprawdź czy jest IMIĘ + NAZWISKO + TELEFON → CONTACT_DATA
+2. Jeśli NIE, sprawdź czy jest DZIEŃ + CZAS → BOOKING  
+3. Jeśli NIE, sprawdź pozostałe kategorie
+
+ODPOWIEDZ TYLKO NAZWĄ KATEGORII:"""
         
         response = client.chat.completions.create(
             model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
             messages=[{"role": "user", "content": enhanced_prompt}],
-            max_tokens=1000,
+            max_tokens=100,
             temperature=0.0
         )
         
@@ -628,23 +644,23 @@ ODPOWIEDZ TYLKO NAZWĄ KATEGORII (bez myślenia na głos):"""
         
         for intent in valid_intents:
             if intent in cleaned.upper():
-                logger.info(f"🎯 AI Strategy 1 Enhanced: '{user_message}' → {intent}")
+                logger.info(f"🎯 AI Strategy 1 Enhanced + Context: '{user_message}' [sesja: {session.state if session else 'brak'}] → {intent}")
                 return intent
             
     except Exception as e:
         logger.warning(f"AI Strategy 1 Enhanced failed: {e}")
     
-    # STRATEGIA 2: STEP-BY-STEP ANALYSIS
+    # STRATEGIA 2: STEP-BY-STEP Z KONTEKSTEM
     try:
         step_prompt = f"""ANALIZUJ KROK PO KROKU:
 
-WIADOMOŚĆ: "{user_message}"
+WIADOMOŚĆ: "{user_message}"{session_context}
 
 KROK 1: Czy zawiera imię + nazwisko + telefon (9 cyfr)?
-- TAK → CONTACT_DATA
+- TAK → CONTACT_DATA (zawsze, niezależnie od kontekstu!)
 - NIE → idź do KROK 2
 
-KROK 2: Czy zawiera dzień tygodnia + godzinę (HH:MM)?
+KROK 2: Czy zawiera dzień tygodnia + godzinę (HH:MM) BEZ danych osobowych?
 - TAK → BOOKING  
 - NIE → idź do KROK 3
 
@@ -658,7 +674,7 @@ KROK 4: Czy wyraża chęć umówienia się?
 - TAK → WANT_APPOINTMENT
 - NIE → idź do KROK 5
 
-KROK 5: Czy chce anulować wizytę?
+KROK 5: Czy chce anulować wizytę (ogólnie)?
 - Słowa: "anuluj", "odwołaj", "rezygnuj"
 - TAK → CANCEL_VISIT
 - NIE → OTHER_QUESTION
@@ -668,7 +684,7 @@ ODPOWIEDŹ (tylko nazwa kategorii):"""
         response = client.chat.completions.create(
             model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
             messages=[{"role": "user", "content": step_prompt}],
-            max_tokens=500,
+            max_tokens=100,
             temperature=0.0
         )
         
@@ -677,48 +693,41 @@ ODPOWIEDŹ (tylko nazwa kategorii):"""
         
         for intent in valid_intents:
             if intent in cleaned.upper():
-                logger.info(f"🎯 AI Strategy 2 Step-by-step: '{user_message}' → {intent}")
+                logger.info(f"🎯 AI Strategy 2 Step-by-step + Context: '{user_message}' [sesja: {session.state if session else 'brak'}] → {intent}")
                 return intent
                 
     except Exception as e:
         logger.warning(f"AI Strategy 2 failed: {e}")
     
-    # STRATEGIA 3: SIMPLE KEYWORDS (pure AI approach)
-    try:
-        keyword_prompt = f"""Przeanalizuj wiadomość i znajdź kluczowe elementy:
-
-WIADOMOŚĆ: "{user_message}"
-
-SZUKAJ:
-- Czy jest imię + nazwisko + 9-cyfrowy telefon? → CONTACT_DATA
-- Czy jest dzień (poniedziałek/wtorek/środa/czwartek/piątek/sobota) + czas (XX:XX)? → BOOKING
-- Czy pyta o "wolne terminy" lub "dostępne godziny"? → ASK_AVAILABILITY  
-- Czy mówi "chcę się umówić" lub podobnie? → WANT_APPOINTMENT
-- Czy mówi "anuluj" lub "odwołaj"? → CANCEL_VISIT
-- W pozostałych przypadkach → OTHER_QUESTION
-
-Odpowiedz kategorią:"""
-        
-        response = client.chat.completions.create(
-            model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
-            messages=[{"role": "user", "content": keyword_prompt}],
-            max_tokens=500,
-            temperature=0.0
-        )
-        
-        raw = response.choices[0].message.content.strip()
-        cleaned = clean_thinking_response_enhanced(raw)
-        
-        for intent in valid_intents:
-            if intent in cleaned.upper():
-                logger.info(f"🎯 AI Strategy 3 Keywords: '{user_message}' → {intent}")
-                return intent
-                
-    except Exception as e:
-        logger.warning(f"AI Strategy 3 failed: {e}")
+    # STRATEGIA 3: FALLBACK Z PROSTYM REGEX
+    logger.warning(f"🔧 AI strategies failed, using REGEX backup for: '{user_message}' [sesja: {session.state if session else 'brak'}]")
     
-    # OSTATECZNY FALLBACK - prosty wybór
-    logger.warning(f"🚨 Wszystkie AI strategie nie działają dla: '{user_message}' → OTHER_QUESTION")
+    message = user_message.lower().strip()
+    
+    # 1. PRIORYTET: KONTAKT (imię + nazwisko + telefon)
+    if re.search(r'[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]+\s+[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]+.*\d{9}', user_message):
+        logger.info(f"🔧 REGEX: '{user_message}' → CONTACT_DATA (imię+nazwisko+telefon)")
+        return "CONTACT_DATA"
+    
+    # 2. BOOKING (dzień + godzina) - tylko jeśli brak danych osobowych
+    has_day = any(day in message for day in ['poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota'])
+    has_time = bool(re.search(r'\d{1,2}[:\.]\d{2}', message)) or bool(re.search(r'\d{1,2}\s*$', message))
+    if has_day and has_time:
+        # Sprawdź czy nie ma danych osobowych
+        if not re.search(r'[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]+\s+[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]+', user_message):
+            logger.info(f"🔧 REGEX: '{user_message}' → BOOKING (day+time bez danych)")
+            return "BOOKING"
+    
+    # Pozostałe bez zmian...
+    if any(phrase in message for phrase in ['wolne terminy', 'dostępne terminy', 'godziny w']):
+        return "ASK_AVAILABILITY"
+    
+    if any(phrase in message for phrase in ['chcę się umówić', 'chce się umówić', 'umów mnie']):
+        return "WANT_APPOINTMENT"
+    
+    if any(phrase in message for phrase in ['anuluj', 'odwołaj', 'rezygnuj']):
+        return "CANCEL_VISIT"
+    
     return "OTHER_QUESTION"
 
 def create_booking(appointment_data):
