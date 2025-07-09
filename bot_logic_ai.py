@@ -307,7 +307,7 @@ null"""
         )
         
         raw_response = response.choices[0].message.content.strip()
-        cleaned_response = clean_thinking_response(raw_response)
+        cleaned_response = clean_thinking_response_enhanced(raw_response)
         
         # 🔧 USUŃ BLOKI KODU MARKDOWN
         cleaned_response = re.sub(r'```json\s*', '', cleaned_response)
@@ -417,101 +417,103 @@ null"""
 #         logger.error(f"❌ Błąd AI parsowania kontaktu: {e}")
 #         return None
 
-def parse_cancellation_data_ai(message):
-    """AI parsowanie danych do anulowania"""
-    parse_prompt = f"""Wyciągnij dane do anulowania wizyty.
+# def parse_cancellation_data_ai(message):
+#     """AI parsowanie danych do anulowania"""
+#     parse_prompt = f"""Wyciągnij dane do anulowania wizyty.
 
-WIADOMOŚĆ: "{message}"
+# WIADOMOŚĆ: "{message}"
 
-Znajdź:
-1. IMIĘ I NAZWISKO
-2. NUMER TELEFONU (9 cyfr)
-3. DZIEŃ TYGODNIA wizyty
-4. GODZINĘ wizyty (HH:MM)
+# Znajdź:
+# 1. IMIĘ I NAZWISKO
+# 2. NUMER TELEFONU (9 cyfr)
+# 3. DZIEŃ TYGODNIA wizyty
+# 4. GODZINĘ wizyty (HH:MM)
 
-ODPOWIEDZ W FORMACIE JSON:
-{{"name": "Imię Nazwisko", "phone": "123456789", "day": "Dzień", "time": "HH:MM"}}
+# ODPOWIEDZ W FORMACIE JSON:
+# {{"name": "Imię Nazwisko", "phone": "123456789", "day": "Dzień", "time": "HH:MM"}}
 
-Jeśli nie można wyciągnąć wszystkich danych, odpowiedz: null"""
+# Jeśli nie można wyciągnąć wszystkich danych, odpowiedz: null"""
 
-    try:
-        response = client.chat.completions.create(
-            model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
-            messages=[{"role": "user", "content": parse_prompt}],
-            max_tokens=1000,
-            temperature=0.1
-        )
+#     try:
+#         response = client.chat.completions.create(
+#             model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
+#             messages=[{"role": "user", "content": parse_prompt}],
+#             max_tokens=1000,
+#             temperature=0.1
+#         )
         
-        raw_response = response.choices[0].message.content.strip()
-        cleaned_response = clean_thinking_response(raw_response)
+#         raw_response = response.choices[0].message.content.strip()
+#         cleaned_response = clean_thinking_response(raw_response)
         
-        import json
-        try:
-            result = json.loads(cleaned_response)
-            if (result and result.get('name') and result.get('phone') 
-                and result.get('day') and result.get('time')):
+#         import json
+#         try:
+#             result = json.loads(cleaned_response)
+#             if (result and result.get('name') and result.get('phone') 
+#                 and result.get('day') and result.get('time')):
                 
-                # Walidacja telefonu
-                phone = re.sub(r'[-\s]', '', result['phone'])
-                if len(phone) == 9 and phone.isdigit():
-                    return {
-                        'name': result['name'], 
-                        'phone': phone,
-                        'day': result['day'],
-                        'time': result['time']
-                    }
-        except:
-            pass
+#                 # Walidacja telefonu
+#                 phone = re.sub(r'[-\s]', '', result['phone'])
+#                 if len(phone) == 9 and phone.isdigit():
+#                     return {
+#                         'name': result['name'], 
+#                         'phone': phone,
+#                         'day': result['day'],
+#                         'time': result['time']
+#                     }
+#         except:
+#             pass
             
-        return None
+#         return None
         
-    except Exception as e:
-        logger.error(f"❌ Błąd AI parsowania anulowania: {e}")
-        return None
+#     except Exception as e:
+#         logger.error(f"❌ Błąd AI parsowania anulowania: {e}")
+#         return None
 
 # ==============================================
 # FUNKCJE POMOCNICZE - IDENTYCZNE
 # ==============================================
 
-def clean_thinking_response(response_text):
-    """Usuwa sekcje 'thinking' z odpowiedzi modelu"""
-    if not response_text:
-        return ""
+# def clean_thinking_response(response_text):
+#     """Usuwa sekcje 'thinking' z odpowiedzi modelu"""
+#     if not response_text:
+#         return ""
         
-    original = response_text
-    cleaned = response_text
+#     original = response_text
+#     cleaned = response_text
     
-    if '<think>' in cleaned.lower() and '</think>' not in cleaned.lower():
-        think_pattern = re.compile(r'<think[^>]*>', re.IGNORECASE)
-        matches = list(think_pattern.finditer(cleaned))
-        if matches:
-            last_match = matches[-1]
-            after_think = cleaned[last_match.end():]
+#     if '<think>' in cleaned.lower() and '</think>' not in cleaned.lower():
+#         think_pattern = re.compile(r'<think[^>]*>', re.IGNORECASE)
+#         matches = list(think_pattern.finditer(cleaned))
+#         if matches:
+#             last_match = matches[-1]
+#             after_think = cleaned[last_match.end():]
             
-            lines = after_think.strip().split('\n')
-            for line in lines:
-                line = line.strip()
-                if any(intent in line.upper() for intent in ["BOOKING", "ASK_AVAILABILITY", "WANT_APPOINTMENT", "CONTACT_DATA", "CANCEL_VISIT", "OTHER_QUESTION"]):
-                    cleaned = line
-                    break
-            else:
-                for line in lines:
-                    if len(line.strip()) > 0 and not line.strip().startswith('<'):
-                        cleaned = line.strip()
-                        break
+#             lines = after_think.strip().split('\n')
+#             for line in lines:
+#                 line = line.strip()
+#                 if any(intent in line.upper() for intent in ["BOOKING", "ASK_AVAILABILITY", "WANT_APPOINTMENT", "CONTACT_DATA", "CANCEL_VISIT", "OTHER_QUESTION"]):
+#                     cleaned = line
+#                     break
+#             else:
+#                 for line in lines:
+#                     if len(line.strip()) > 0 and not line.strip().startswith('<'):
+#                         cleaned = line.strip()
+#                         break
     
-    cleaned = re.sub(r'<thinking>.*?</thinking>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
-    cleaned = re.sub(r'<THINK>.*?</THINK>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
-    cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
-    cleaned = re.sub(r'<[^>]*>', '', cleaned)
-    cleaned = cleaned.strip()
+#     cleaned = re.sub(r'<thinking>.*?</thinking>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+#     cleaned = re.sub(r'<THINK>.*?</THINK>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+#     cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+#     cleaned = re.sub(r'<[^>]*>', '', cleaned)
+#     cleaned = cleaned.strip()
     
-    return cleaned
+#     return cleaned
 
 # DODAJ na końcu pliku bot_logic_ai.py (przed ostatnią linią):
 
+# ZASTĄP w bot_logic_ai.py funkcję clean_thinking_response_enhanced:
+
 def clean_thinking_response_enhanced(response_text):
-    """ULEPSZONE czyszczenie thinking tags - specjalnie dla klasyfikacji"""
+    """NAPRAWIONA WERSJA - usuwa <think> ale zachowuje treść odpowiedzi"""
     if not response_text:
         return ""
         
@@ -523,47 +525,49 @@ def clean_thinking_response_enhanced(response_text):
     cleaned = re.sub(r'<thinking>.*?</thinking>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
     
     # 2. USUŃ NIEDOMKNIĘTE THINKING TAGI
-    cleaned = re.sub(r'<think[^>]*>.*$', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
-    cleaned = re.sub(r'<thinking[^>]*>.*$', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(r'<think[^>]*>.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(r'<thinking[^>]*>.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
     
     # 3. USUŃ WSZYSTKIE TAGI HTML
     cleaned = re.sub(r'<[^>]*>', '', cleaned)
     
-    # 4. USUŃ TYPOWE AI INTRO PHRASES
+    # 4. USUŃ TYPOWE AI INTRO PHRASES (TYLKO NA POCZĄTKU)
     intro_phrases = [
-        r'okay,?\s+so\s+i\s+need\s+to\s+classify.*?[.!]',
-        r'let\s+me\s+go\s+through.*?[.!]',
-        r'i\s+need\s+to\s+analyze.*?[.!]',
-        r'looking\s+at\s+this\s+message.*?[.!]'
+        r'^okay,?\s+so.*?[.!]\s*',
+        r'^let\s+me\s+go\s+through.*?[.!]\s*',
+        r'^i\s+need\s+to\s+analyze.*?[.!]\s*',
+        r'^looking\s+at\s+this\s+message.*?[.!]\s*'
     ]
     
     for phrase in intro_phrases:
         cleaned = re.sub(phrase, '', cleaned, flags=re.IGNORECASE)
     
-    # 5. WYCIĄGNIJ TYLKO NAZWĘ KATEGORII
-    valid_intents = ["CONTACT_DATA", "BOOKING", "ASK_AVAILABILITY", "WANT_APPOINTMENT", "CANCEL_VISIT", "OTHER_QUESTION"]
+    # 5. USUŃ POJEDYNCZE KATEGORIE AI (jeśli to cała odpowiedź)
+    single_word_categories = ["CONTACT_DATA", "BOOKING", "ASK_AVAILABILITY", "WANT_APPOINTMENT", "CANCEL_VISIT", "OTHER_QUESTION"]
     
-    # Sprawdź czy w oczyszczonej odpowiedzi jest kategoria
-    cleaned_upper = cleaned.upper()
-    for intent in valid_intents:
-        if intent in cleaned_upper:
-            return intent
+    cleaned_stripped = cleaned.strip()
+    if cleaned_stripped in single_word_categories:
+        # To jest błędna odpowiedź - AI zwróciło tylko kategorię
+        logger.warning(f"⚠️ AI zwróciło tylko kategorię: {cleaned_stripped}")
+        return "Cześć! Jak mogę ci pomóc? 😊"
     
-    # 6. JEŚLI NIE ZNALEZIONO, SPRÓBUJ WYCIĄGNĄĆ Z ORYGINALNEJ
-    original_upper = original.upper()
-    for intent in valid_intents:
-        if intent in original_upper:
-            return intent
+    # 6. USUŃ KATEGORIE TYLKO Z POCZĄTKU/KOŃCA LINII
+    for category in single_word_categories:
+        # Usuń kategorię z początku linii + opcjonalne znaki
+        cleaned = re.sub(rf'^{category}[\s\.\-]*', '', cleaned, flags=re.IGNORECASE | re.MULTILINE)
+        # Usuń kategorię z końca linii + opcjonalne znaki  
+        cleaned = re.sub(rf'[\s\.\-]*{category}$', '', cleaned, flags=re.IGNORECASE | re.MULTILINE)
     
-    # 7. OSTATNIA SZANSA - WYCIĄGNIJ OSTATNIĄ LINIĘ
-    lines = cleaned.strip().split('\n')
-    if lines:
-        last_line = lines[-1].strip().upper()
-        for intent in valid_intents:
-            if intent in last_line:
-                return intent
+    # 7. WYCZYŚĆ PUSTE LINIE I BIAŁE ZNAKI
+    cleaned = '\n'.join(line.strip() for line in cleaned.split('\n') if line.strip())
+    cleaned = cleaned.strip()
     
-    return cleaned.strip()
+    # 8. JEŚLI PO CZYSZCZENIU NICZEGO NIE MA, ZWRÓĆ DOMYŚLNĄ ODPOWIEDŹ
+    if not cleaned or len(cleaned) < 5:
+        logger.warning(f"⚠️ Pusta odpowiedź po czyszczeniu z: '{original[:100]}...'")
+        return "Cześć! Jak mogę ci pomóc? 😊"
+    
+    return cleaned
 
 # ZASTĄP w bot_logic_ai.py funkcję analyze_user_intent_ai_robust:
 
@@ -927,7 +931,7 @@ ODPOWIEDŹ (tylko nazwa dnia lub null):"""
             temperature=0.0
         )
         
-        result = clean_thinking_response(response.choices[0].message.content.strip())
+        result = clean_thinking_response_enhanced(response.choices[0].message.content.strip())
         
         # Mapowanie AI odpowiedzi na standardowe nazwy
         day_mapping = {
@@ -1134,3 +1138,402 @@ def process_user_message(user_message, user_id=None):
 
 logger.info("🤖 Bot Logic AI zainicjalizowany - PEŁNA AI WERSJA")
 logger.info(f"🔑 Together API: {'✅' if api_key else '❌'}")
+
+# Dodaj globalny słownik historii użytkowników
+user_conversations = {}
+
+def get_user_history(user_id):
+    """Pobierz historię rozmowy użytkownika"""
+    if user_id not in user_conversations:
+        user_conversations[user_id] = []
+    return user_conversations[user_id]
+
+def add_to_history(user_id, role, message):
+    """Dodaj wiadomość do historii"""
+    history = get_user_history(user_id)
+    history.append({"role": role, "content": message})
+    
+    # Ogranicz historię do ostatnich 20 wiadomości
+    if len(history) > 20:
+        user_conversations[user_id] = history[-20:]
+
+# def process_user_message_with_memory(user_message, user_id=None):
+#     """NOWA FUNKCJA - Przetwarzanie z pamięcią"""
+    
+#     # 1. Dodaj wiadomość użytkownika do historii
+#     if user_id:
+#         add_to_history(user_id, "user", user_message)
+#         history = get_user_history(user_id)
+#     else:
+#         history = [{"role": "user", "content": user_message}]
+    
+#     # 2. Inteligentna odpowiedź z kontekstem
+#     try:
+#         response = client.chat.completions.create(
+#             model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
+#             messages=[
+#                 {
+#                     "role": "system", 
+#                     "content": """Jesteś asystentem salonu fryzjerskiego "Kleopatra".
+
+# WAŻNE: NIE używaj tagów <think> ani nie pokazuj procesu myślowego!
+# Odpowiadaj BEZPOŚREDNIO na pytanie klienta!
+                    
+# TWOJE ZADANIA:
+# - Zapamiętaj imię klienta i używaj go w rozmowie
+# - Pomagaj w umówieniu wizyt
+# - Odpowiadaj na pytania o salon
+# - Bądź miły i profesjonalny
+
+# GODZINY PRACY: 9:00-18:00, poniedziałek-sobota
+# USŁUGI: Strzyżenie, Farbowanie, Stylizacja"""
+#                 }
+#             ] + history,
+#             max_tokens=500,
+#             temperature=0.7
+#         )
+        
+#         bot_response = response.choices[0].message.content
+        
+#         # 🔧 UŻYJ clean_thinking_response_enhanced:
+#         cleaned_response = clean_thinking_response_enhanced(bot_response)
+        
+#         # 3. Dodaj odpowiedź bota do historii
+#         if user_id:
+#             add_to_history(user_id, "assistant", cleaned_response)
+        
+#         logger.info(f"🧠 AI z pamięcią: '{user_message}' → '{cleaned_response[:50]}...'")
+#         return cleaned_response
+        
+#     except Exception as e:
+#         logger.error(f"❌ Błąd AI z pamięcią: {e}")
+#         return "Przepraszam, wystąpił błąd. Spróbuj ponownie."
+    
+# NOWA UPROSZCZONA WERSJA - TYLKO AI Z PAMIĘCI:
+
+# ZMIEŃ w bot_logic_ai.py, w funkcji process_user_message_smart:
+
+# ZASTĄP w bot_logic_ai.py funkcję process_user_message_smart:
+
+def process_user_message_smart(user_message, user_id):
+    """INTELIGENTNY SYSTEM - TYLKO AI Z PAMIĘCIĄ + KALENDARZ + DATA"""
+    
+    # 🔧 OBSŁUGA PUSTYCH WIADOMOŚCI:
+    if not user_message or not user_message.strip():
+        return "Cześć! Jak mogę ci pomóc? 😊"
+    
+    # Pobierz historię
+    history = get_user_history(user_id)
+    add_to_history(user_id, "user", user_message)
+    
+    # 🔧 POBIERZ AKTUALNĄ DATĘ Z OSOBNEJ FUNKCJI
+    current_date_info = get_current_date_info()
+    
+    # ZAAWANSOWANY SYSTEM PROMPT Z DATĄ
+    system_prompt = f"""Jesteś asystentem salonu fryzjerskiego "Kleopatra".
+
+{current_date_info}
+
+🚨 KRYTYCZNE ZASADY:
+- NIE używaj tagów <think>, <thinking> ani nie pokazuj procesu myślowego!
+- NIE odpowiadaj BOOKING, CONTACT_DATA, itp. - to są kategorie wewnętrzne!
+- Odpowiadaj ZAWSZE pełnymi zdaniami po polsku!
+- Bądź naturalny, pomocny i przyjazny!
+- ZNASZ AKTUALNĄ DATĘ - używaj jej w odpowiedziach!
+
+🔧 FORMATY POTWIERDZENIA:
+
+PRZY REZERWACJI - użyj DOKŁADNIE:
+✅ REZERWACJA POTWIERDZONA: [imię] [nazwisko], [dzień] [godzina], [usługa], tel: [telefon]
+
+PRZY ANULOWANIU - użyj DOKŁADNIE:  
+❌ ANULACJA POTWIERDZONA: [imię] [nazwisko], [dzień] [godzina], tel: [telefon]
+
+PRZYKŁADY DOBRYCH ODPOWIEDZI Z DATĄ:
+
+👤 "jaki mamy dzisiaj dzień?"
+🤖 "Dzisiaj mamy {get_current_date_info().split('Dzisiaj: ')[1].split('\\n')[0].split(',')[0]}! 😊 Chcesz się umówić na wizytę?"
+
+👤 "chcę się umówić na jutro"
+🤖 "Jutro to {(datetime.now(pytz.timezone('Europe/Warsaw')) + timedelta(days=1)).strftime('%A').lower()}! Jaka godzina Ci odpowiada? 😊"
+
+👤 "chcę się umówić"
+🤖 "Jaki dzień i godzina Ci odpowiadają? 😊"
+
+👤 "wtorek 15:00 strzyżenie"  
+🤖 "Super! Wtorek 15:00 na strzyżenie brzmi świetnie! Teraz potrzebuję Twoich danych - imię, nazwisko i telefon. 📞"
+
+👤 "Anna Kowalska 987654321"
+🤖 "✅ REZERWACJA POTWIERDZONA: Anna Kowalska, wtorek 15:00, Strzyżenie, tel: 987654321
+
+Dziękuję! Czekamy na Ciebie w salonie! 💇‍♀️"
+
+TWOJE MOŻLIWOŚCI:
+🗓️ REZERWACJE - umów klientów na wizyty
+❌ ANULOWANIA - anuluj istniejące wizyty  
+ℹ️ INFORMACJE - godziny, usługi, ceny, aktualna data
+💬 ROZMOWA - pamiętaj imiona, bądź miły
+
+GODZINY: 9:00-18:00, poniedziałek-sobota
+USŁUGI: Strzyżenie (80zł), Farbowanie (150zł), Stylizacja (120zł)
+
+INSTRUKCJE DZIAŁANIA:
+
+1️⃣ REZERWACJA:
+- Gdy klient chce wizytę, poproś naturalnie o dzień, godzinę, usługę
+- Potem poproś o imię, nazwisko, telefon
+- Potwierdź używając dokładnego formatu powyżej
+
+2️⃣ ANULOWANIE:
+- Gdy klient chce anulować, poproś o: imię, nazwisko, telefon, dzień i godzinę
+- Potwierdź używając dokładnego formatu: 
+  ❌ ANULACJA POTWIERDZONA: [imię] [nazwisko], [dzień] [godzina], tel: [telefon]
+- ZAWSZE używaj tego formatu przy anulowaniu!
+
+3️⃣ INFORMACJE O DACIE:
+- Gdy pyta o datę/dzień - podaj aktualne informacje
+- Używaj polskich nazw dni tygodnia
+- Pomagaj w planowaniu wizyt względem dzisiejszej daty
+- "jutro" = następny dzień po dzisiejszym
+- "pojutrze" = drugi dzień po dzisiejszym
+
+4️⃣ POZOSTAŁE:
+- Odpowiadaj naturalnie na pytania
+- Używaj emoji
+- Bądź pomocny
+
+PAMIĘTAJ: Zawsze odpowiadaj pełnymi zdaniami, NIGDY pojedynczymi słowami jak "BOOKING"!"""
+
+    try:
+        response = client.chat.completions.create(
+            model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
+            messages=[{"role": "system", "content": system_prompt}] + history,
+            max_tokens=700,
+            temperature=0.7
+        )
+        
+        bot_response = response.choices[0].message.content
+        
+        # 🔧 UŻYJ ISTNIEJĄCEJ FUNKCJI clean_thinking_response_enhanced:
+        cleaned_response = clean_thinking_response_enhanced(bot_response)
+        
+        # 🔧 DETEKCJA REZERWACJI I DODANIE DO KALENDARZA - ISTNIEJĄCE FUNKCJE
+        if "✅ REZERWACJA POTWIERDZONA:" in cleaned_response:
+            try:
+                # Wyciągnij dane z odpowiedzi AI
+                pattern = r"✅ REZERWACJA POTWIERDZONA: ([^,]+), ([^,]+), ([^,]+), tel: (\d+)"
+                match = re.search(pattern, cleaned_response)
+                
+                if match:
+                    name = match.group(1).strip()
+                    datetime_str = match.group(2).strip()  # np. "wtorek 15:00"
+                    service = match.group(3).strip()
+                    phone = match.group(4).strip()
+                    
+                    logger.info(f"📅 Parsowanie rezerwacji: {name}, {datetime_str}, {service}, {phone}")
+                    
+                    # Mapowanie dni na liczby (dla istniejącej funkcji)
+                    day_mapping = {
+                        'poniedziałek': 0,
+                        'wtorek': 1, 
+                        'środa': 2,
+                        'czwartek': 3,
+                        'piątek': 4,
+                        'sobota': 5
+                    }
+                    
+                    # Parsuj dzień i godzinę
+                    parts = datetime_str.lower().split()
+                    if len(parts) >= 2:
+                        day_pl = parts[0]
+                        time_str = parts[1]  # np. "15:00"
+                        
+                        target_day = day_mapping.get(day_pl)
+                        if target_day is not None:
+                            # Oblicz datetime dla istniejącej funkcji
+                            tz = pytz.timezone('Europe/Warsaw')
+                            now = datetime.now(tz)
+                            days_ahead = (target_day - now.weekday()) % 7
+                            if days_ahead == 0:  # Jeśli to dzisiaj, weź następny tydzień
+                                days_ahead = 7
+                            
+                            appointment_date = now + timedelta(days=days_ahead)
+                            
+                            # Parsuj godzinę
+                            time_parts = time_str.split(':')
+                            if len(time_parts) == 2:
+                                hour = int(time_parts[0])
+                                minute = int(time_parts[1])
+                                
+                                # Utwórz datetime wizyty
+                                appointment_datetime = appointment_date.replace(
+                                    hour=hour,
+                                    minute=minute,
+                                    second=0,
+                                    microsecond=0
+                                )
+                                
+                                # 🔧 UŻYJ ISTNIEJĄCEJ FUNKCJI create_appointment:
+                                calendar_result = create_appointment(
+                                    client_name=name,
+                                    client_phone=phone,
+                                    service_type=service,
+                                    appointment_time=appointment_datetime
+                                )
+                                
+                                if calendar_result:
+                                    logger.info(f"📅 Dodano do kalendarza Google: {calendar_result}")
+                                    cleaned_response += f"\n\n📅 Wydarzenie dodane do kalendarza Google!"
+                                else:
+                                    logger.error("❌ Błąd dodawania do kalendarza")
+                                    cleaned_response += f"\n\n⚠️ Rezerwacja zapisana, problem z kalendarzem Google."
+                            else:
+                                logger.error(f"❌ Nieprawidłowy format czasu: {time_str}")
+                        else:
+                            logger.error(f"❌ Nieznany dzień: {day_pl}")
+                    else:
+                        logger.error(f"❌ Nieprawidłowy format daty: {datetime_str}")
+                        
+            except Exception as e:
+                logger.error(f"❌ Błąd integracji kalendarza rezerwacji: {e}")
+        
+        # 🔧 DETEKCJA ANULOWANIA I USUNIĘCIE Z KALENDARZA - ISTNIEJĄCE FUNKCJE
+        elif "❌ ANULACJA POTWIERDZONA:" in cleaned_response:
+            try:
+                # Wyciągnij dane z odpowiedzi AI
+                pattern = r"❌ ANULACJA POTWIERDZONA: ([^,]+), ([^,]+), tel: (\d+)"
+                match = re.search(pattern, cleaned_response)
+                
+                if match:
+                    name = match.group(1).strip()
+                    datetime_str = match.group(2).strip()  # np. "środa 14:00"
+                    phone = match.group(3).strip()
+                    
+                    logger.info(f"🗑️ Parsowanie anulacji: {name}, {datetime_str}, {phone}")
+                    
+                    # Parsuj dzień i godzinę
+                    parts = datetime_str.lower().split()
+                    if len(parts) >= 2:
+                        day_pl = parts[0]
+                        time_str = parts[1]  # np. "14:00"
+                        
+                        # Mapowanie na nazwy wymagane przez istniejącą funkcję
+                        day_names_mapping = {
+                            'poniedziałek': 'Poniedziałek',
+                            'wtorek': 'Wtorek',
+                            'środa': 'Środa', 
+                            'czwartek': 'Czwartek',
+                            'piątek': 'Piątek',
+                            'sobota': 'Sobota'
+                        }
+                        
+                        day_name = day_names_mapping.get(day_pl)
+                        if day_name:
+                            # 🔧 UŻYJ ISTNIEJĄCEJ FUNKCJI cancel_appointment:
+                            cancel_result = cancel_appointment(
+                                client_name=name,
+                                client_phone=phone,
+                                appointment_day=day_name,  # 'Środa'
+                                appointment_time=time_str  # '14:00'
+                            )
+                            
+                            if cancel_result:
+                                logger.info(f"🗑️ Usunięto z kalendarza Google: {cancel_result}")
+                                cleaned_response += f"\n\n🗑️ Wydarzenie usunięte z kalendarza Google!"
+                            else:
+                                logger.error("❌ Nie znaleziono wizyty do anulowania")
+                                cleaned_response += f"\n\n⚠️ Nie znaleziono wizyty w kalendarzu Google."
+                        else:
+                            logger.error(f"❌ Nieznany dzień: {day_pl}")
+                    else:
+                        logger.error(f"❌ Nieprawidłowy format daty: {datetime_str}")
+                        
+            except Exception as e:
+                logger.error(f"❌ Błąd integracji kalendarza anulacji: {e}")
+        
+        # Potem dodaj do historii już oczyszczoną wersję
+        add_to_history(user_id, "assistant", cleaned_response)
+        
+        logger.info(f"🧠 AI Smart: '{user_message}' → '{cleaned_response[:50]}...'")
+        return cleaned_response
+        
+    except Exception as e:
+        logger.error(f"❌ Błąd AI Smart: {e}")
+        return "Przepraszam, wystąpił błąd. Spróbuj ponownie."
+
+# DODAJ na końcu bot_logic_ai.py:
+
+def get_user_stats():
+    """Statystyki użytkowników z pamięcią"""
+    now = datetime.now()
+    active_last_hour = 0
+    active_last_day = 0
+    
+    for session in user_sessions.values():
+        time_diff = (now - session.last_activity).total_seconds()
+        if time_diff < 3600:  # 1 godzina
+            active_last_hour += 1
+        if time_diff < 86400:  # 24 godziny
+            active_last_day += 1
+    
+    return {
+        "total_sessions": len(user_sessions),
+        "active_last_hour": active_last_hour,
+        "active_last_day": active_last_day,
+        "conversations_total": len(user_conversations)
+    }
+
+# DODAJ na górze bot_logic_ai.py (po importach):
+
+def get_current_date_info():
+    """Zwraca aktualną datę i czas dla AI"""
+    tz = pytz.timezone('Europe/Warsaw')
+    now = datetime.now(tz)
+    
+    # Mapowanie angielskich na polskie nazwy
+    day_names = {
+        'Monday': 'poniedziałek',
+        'Tuesday': 'wtorek', 
+        'Wednesday': 'środa',
+        'Thursday': 'czwartek',
+        'Friday': 'piątek',
+        'Saturday': 'sobota',
+        'Sunday': 'niedziela'
+    }
+    
+    month_names = {
+        'January': 'styczeń', 'February': 'luty', 'March': 'marzec',
+        'April': 'kwiecień', 'May': 'maj', 'June': 'czerwiec',
+        'July': 'lipiec', 'August': 'sierpień', 'September': 'wrzesień',
+        'October': 'październik', 'November': 'listopad', 'December': 'grudzień'
+    }
+    
+    today_eng = now.strftime('%A')
+    today_pl = day_names.get(today_eng, today_eng.lower())
+    
+    tomorrow = now + timedelta(days=1)
+    tomorrow_eng = tomorrow.strftime('%A')
+    tomorrow_pl = day_names.get(tomorrow_eng, tomorrow_eng.lower())
+    
+    month_pl = month_names.get(now.strftime('%B'), now.strftime('%B'))
+    
+    # Zwróć sformatowany string dla AI
+    return f"""📅 AKTUALNA DATA I CZAS:
+- Dzisiaj: {today_pl}, {now.day} {month_pl} {now.year}
+- Jutro: {tomorrow_pl}
+- Godzina: {now.strftime('%H:%M')}
+- Dzień tygodnia: {today_pl}
+
+POLSKIE NAZWY DNI:
+- Monday = poniedziałek
+- Tuesday = wtorek  
+- Wednesday = środa
+- Thursday = czwartek
+- Friday = piątek
+- Saturday = sobota
+- Sunday = niedziela
+
+MAPOWANIE "JUTRO":
+- Gdy klient pyta o "jutro" = {tomorrow_pl}
+- Gdy klient pyta o "dzisiaj" = {today_pl}
+- Gdy klient pyta o "pojutrze" = {(now + timedelta(days=2)).strftime('%A').lower()}"""

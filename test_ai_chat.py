@@ -7,6 +7,31 @@ from together import Together
 import os
 from datetime import datetime
 
+"""
+SYSTEM PAMIĘCI:
+"""
+
+# Dodaj globalny słownik historii użytkowników
+user_conversations = {}
+
+def get_user_history(user_id):
+    """Pobierz historię rozmowy użytkownika"""
+    if user_id not in user_conversations:
+        user_conversations[user_id] = []
+    return user_conversations[user_id]
+
+def add_to_history(user_id, role, message):
+    """Dodaj wiadomość do historii"""
+    history = get_user_history(user_id)
+    history.append({"role": role, "content": message})
+    
+    # Ogranicz historię do ostatnich 20 wiadomości
+    if len(history) > 20:
+        user_conversations[user_id] = history[-20:]
+
+
+    
+
 def main():
     print("🤖 INTERAKTYWNY CHAT Z TOGETHER AI")
     print("="*60)

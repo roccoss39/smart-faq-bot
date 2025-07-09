@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 # from bot_logic import process_user_message, clean_thinking_response, SYSTEM_PROMPT, client
 
 #AI VERSION (nowa)
-from bot_logic_ai import process_user_message
+from bot_logic_ai import process_user_message_smart
 
 # Załaduj zmienne z .env
 load_dotenv()
@@ -156,7 +156,7 @@ def webhook():
                             logger.info(f"💬 Wiadomość od {sender_id}: {message_text}")
                             
                             # PRZETWÓRZ PRZEZ BOT LOGIC
-                            ai_response = process_user_message(message_text, sender_id)
+                            ai_response = process_user_message_smart(message_text, sender_id)
                             
                             # Wyślij odpowiedź
                             send_facebook_message(sender_id, ai_response)
@@ -186,8 +186,8 @@ def chat():
             last_message = user_messages[-1]
             user_message = last_message.get('content', '')
             
-            # Użyj bot logic (bez user_id dla web chat)
-            response_text = process_user_message(user_message, user_id=None)
+            # 🔧 POPRAWKA - WYWOŁAJ FUNKCJĘ Z PARAMETRAMI:
+            response_text = process_user_message_smart(user_message, user_id="web_user")
             
             return jsonify({
                 'response': response_text,
@@ -207,14 +207,19 @@ def chat():
 def health_check():
     """Health check endpoint"""
     try:
-        from bot_logic import get_active_sessions_count
+        # 🔧 ZMIEŃ IMPORT:
+        from bot_logic_ai import get_user_stats
+        stats = get_user_stats()
+        
         return jsonify({
             'status': 'ok',
-            'service': 'Smart FAQ Bot Backend + Facebook Messenger',
+            'service': 'Smart FAQ Bot Backend + Facebook Messenger (AI with Memory)',
             'model': 'deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free',
             'facebook_configured': bool(FACEBOOK_PAGE_ACCESS_TOKEN),
             'verify_token': FACEBOOK_VERIFY_TOKEN,
-            'active_sessions': get_active_sessions_count(),
+            'active_sessions': stats['total_sessions'],
+            'active_last_hour': stats['active_last_hour'],
+            'memory_enabled': True,
             'calendar_service': 'enabled'
         })
     except Exception as e:
@@ -223,24 +228,24 @@ def health_check():
             'error': str(e)
         }), 500
 
-# ==============================================
-# DEBUG ENDPOINTS (opcjonalne)
-# ==============================================
-
 @app.route('/api/debug/sessions', methods=['GET'])
 def debug_sessions():
     """Debug endpoint - pokaż aktywne sesje"""
     try:
-        from bot_logic import user_sessions
+        # 🔧 ZMIEŃ IMPORT:
+        from bot_logic_ai import user_sessions, user_conversations
+        
         sessions_info = {}
         for user_id, session in user_sessions.items():
             sessions_info[user_id] = {
                 'state': session.state,
                 'appointment_data': session.appointment_data,
-                'last_activity': session.last_activity.isoformat()
+                'last_activity': session.last_activity.isoformat(),
+                'conversation_length': len(user_conversations.get(user_id, []))
             }
         return jsonify({
             'active_sessions': len(sessions_info),
+            'conversations': len(user_conversations),
             'sessions': sessions_info
         })
     except Exception as e:
@@ -250,11 +255,20 @@ def debug_sessions():
 def debug_reset_session(user_id):
     """Debug endpoint - resetuj sesję użytkownika"""
     try:
-        from bot_logic import reset_user_session
-        success = reset_user_session(user_id)
+        # 🔧 NOWA FUNKCJA RESET Z PAMIĘCIĄ:
+        from bot_logic_ai import user_sessions, user_conversations
+        
+        success = False
+        if user_id in user_sessions:
+            del user_sessions[user_id]
+            success = True
+        
+        if user_id in user_conversations:
+            del user_conversations[user_id]
+        
         return jsonify({
             'success': success,
-            'message': f'Sesja {user_id} {"zresetowana" if success else "nie znaleziona"}'
+            'message': f'Sesja i pamięć {user_id} {"zresetowana" if success else "nie znaleziona"}'
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
