@@ -1326,39 +1326,74 @@ PAMIĘTAJ: Zawsze odpowiadaj pełnymi zdaniami, NIGDY pojedynczymi słowami jak 
                 
                 if match:
                     name = match.group(1).strip()
-                    datetime_str = match.group(2).strip()  # np. "wtorek 15:00"
+                    datetime_str = match.group(2).strip()  # np. "środa 17:00"
                     service = match.group(3).strip()
                     phone = match.group(4).strip()
                     
                     logger.info(f"📅 Parsowanie rezerwacji: {name}, {datetime_str}, {service}, {phone}")
                     
-                    # Mapowanie dni na liczby (dla istniejącej funkcji)
+                    # 🔧 NOWA LOGIKA DAT - OBSŁUGA "DZISIAJ", "JUTRO", KONKRETNYCH DNI
+                    tz = pytz.timezone('Europe/Warsaw')
+                    now = datetime.now(tz)
+                    
+                    # Mapowanie dni na liczby
                     day_mapping = {
-                        'poniedziałek': 0,
-                        'wtorek': 1, 
-                        'środa': 2,
-                        'czwartek': 3,
-                        'piątek': 4,
-                        'sobota': 5
+                        'poniedziałek': 0, 'wtorek': 1, 'środa': 2,
+                        'czwartek': 3, 'piątek': 4, 'sobota': 5
                     }
                     
                     # Parsuj dzień i godzinę
                     parts = datetime_str.lower().split()
                     if len(parts) >= 2:
                         day_pl = parts[0]
-                        time_str = parts[1]  # np. "15:00"
+                        time_str = parts[1]  # np. "17:00"
                         
-                        target_day = day_mapping.get(day_pl)
-                        if target_day is not None:
-                            # Oblicz datetime dla istniejącej funkcji
-                            tz = pytz.timezone('Europe/Warsaw')
-                            now = datetime.now(tz)
-                            days_ahead = (target_day - now.weekday()) % 7
-                            if days_ahead == 0:  # Jeśli to dzisiaj, weź następny tydzień
-                                days_ahead = 7
+                        # 🔧 OBSŁUGA RÓŻNYCH FORMATÓW DNI:
+                        appointment_date = None
+                        
+                        if day_pl in ['dzisiaj', 'dziś']:
+                            # DZISIAJ = ten sam dzień
+                            appointment_date = now.date()
+                            logger.info(f"📅 DZISIAJ: {appointment_date}")
                             
-                            appointment_date = now + timedelta(days=days_ahead)
+                        elif day_pl == 'jutro':
+                            # JUTRO = następny dzień
+                            appointment_date = (now + timedelta(days=1)).date()
+                            logger.info(f"📅 JUTRO: {appointment_date}")
                             
+                        elif day_pl in day_mapping:
+                            # KONKRETNY DZIEŃ TYGODNIA
+                            target_day = day_mapping[day_pl]
+                            current_day = now.weekday()
+                            
+                            # Oblicz ile dni do przodu
+                            if target_day > current_day:
+                                # W tym tygodniu
+                                days_ahead = target_day - current_day
+                            elif target_day == current_day:
+                                # Ten sam dzień - sprawdź godzinę
+                                time_parts = time_str.split(':')
+                                if len(time_parts) == 2:
+                                    hour = int(time_parts[0])
+                                    minute = int(time_parts[1])
+                                    appointment_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                                    
+                                    if appointment_time > now:
+                                        # Dzisiaj, ale w przyszłości
+                                        days_ahead = 0
+                                    else:
+                                        # Dzisiaj, ale w przeszłości - następny tydzień
+                                        days_ahead = 7
+                                else:
+                                    days_ahead = 7
+                            else:
+                                # Następny tydzień
+                                days_ahead = 7 - (current_day - target_day)
+                            
+                            appointment_date = (now + timedelta(days=days_ahead)).date()
+                            logger.info(f"📅 {day_pl.upper()}: {appointment_date} (za {days_ahead} dni)")
+                        
+                        if appointment_date:
                             # Parsuj godzinę
                             time_parts = time_str.split(':')
                             if len(time_parts) == 2:
@@ -1366,12 +1401,13 @@ PAMIĘTAJ: Zawsze odpowiadaj pełnymi zdaniami, NIGDY pojedynczymi słowami jak 
                                 minute = int(time_parts[1])
                                 
                                 # Utwórz datetime wizyty
-                                appointment_datetime = appointment_date.replace(
-                                    hour=hour,
-                                    minute=minute,
-                                    second=0,
-                                    microsecond=0
+                                appointment_datetime = datetime.combine(
+                                    appointment_date,
+                                    datetime.min.time().replace(hour=hour, minute=minute)
                                 )
+                                appointment_datetime = tz.localize(appointment_datetime)
+                                
+                                logger.info(f"📅 FINALNA DATA WIZYTY: {appointment_datetime}")
                                 
                                 # 🔧 UŻYJ ISTNIEJĄCEJ FUNKCJI create_appointment:
                                 calendar_result = create_appointment(
@@ -1383,73 +1419,22 @@ PAMIĘTAJ: Zawsze odpowiadaj pełnymi zdaniami, NIGDY pojedynczymi słowami jak 
                                 
                                 if calendar_result:
                                     logger.info(f"📅 Dodano do kalendarza Google: {calendar_result}")
+                                    # 🔧 DODAJ KONKRETNĄ DATĘ DO ODPOWIEDZI:
+                                    date_display = appointment_datetime.strftime('%A, %d %B %Y o %H:%M')
                                     cleaned_response += f"\n\n📅 Wydarzenie dodane do kalendarza Google!"
+                                    cleaned_response += f"\n🗓️ Data: {date_display}"
                                 else:
                                     logger.error("❌ Błąd dodawania do kalendarza")
                                     cleaned_response += f"\n\n⚠️ Rezerwacja zapisana, problem z kalendarzem Google."
                             else:
                                 logger.error(f"❌ Nieprawidłowy format czasu: {time_str}")
                         else:
-                            logger.error(f"❌ Nieznany dzień: {day_pl}")
+                            logger.error(f"❌ Nie można określić daty dla: {day_pl}")
                     else:
                         logger.error(f"❌ Nieprawidłowy format daty: {datetime_str}")
                         
             except Exception as e:
                 logger.error(f"❌ Błąd integracji kalendarza rezerwacji: {e}")
-        
-        # 🔧 DETEKCJA ANULOWANIA I USUNIĘCIE Z KALENDARZA - ISTNIEJĄCE FUNKCJE
-        elif "❌ ANULACJA POTWIERDZONA:" in cleaned_response:
-            try:
-                # Wyciągnij dane z odpowiedzi AI
-                pattern = r"❌ ANULACJA POTWIERDZONA: ([^,]+), ([^,]+), tel: (\d+)"
-                match = re.search(pattern, cleaned_response)
-                
-                if match:
-                    name = match.group(1).strip()
-                    datetime_str = match.group(2).strip()  # np. "środa 14:00"
-                    phone = match.group(3).strip()
-                    
-                    logger.info(f"🗑️ Parsowanie anulacji: {name}, {datetime_str}, {phone}")
-                    
-                    # Parsuj dzień i godzinę
-                    parts = datetime_str.lower().split()
-                    if len(parts) >= 2:
-                        day_pl = parts[0]
-                        time_str = parts[1]  # np. "14:00"
-                        
-                        # Mapowanie na nazwy wymagane przez istniejącą funkcję
-                        day_names_mapping = {
-                            'poniedziałek': 'Poniedziałek',
-                            'wtorek': 'Wtorek',
-                            'środa': 'Środa', 
-                            'czwartek': 'Czwartek',
-                            'piątek': 'Piątek',
-                            'sobota': 'Sobota'
-                        }
-                        
-                        day_name = day_names_mapping.get(day_pl)
-                        if day_name:
-                            # 🔧 UŻYJ ISTNIEJĄCEJ FUNKCJI cancel_appointment:
-                            cancel_result = cancel_appointment(
-                                client_name=name,
-                                client_phone=phone,
-                                appointment_day=day_name,  # 'Środa'
-                                appointment_time=time_str  # '14:00'
-                            )
-                            
-                            if cancel_result:
-                                logger.info(f"🗑️ Usunięto z kalendarza Google: {cancel_result}")
-                                cleaned_response += f"\n\n🗑️ Wydarzenie usunięte z kalendarza Google!"
-                            else:
-                                logger.error("❌ Nie znaleziono wizyty do anulowania")
-                                cleaned_response += f"\n\n⚠️ Nie znaleziono wizyty w kalendarzu Google."
-                        else:
-                            logger.error(f"❌ Nieznany dzień: {day_pl}")
-                    else:
-                        logger.error(f"❌ Nieprawidłowy format daty: {datetime_str}")
-                        
-            except Exception as e:
-                logger.error(f"❌ Błąd integracji kalendarza anulacji: {e}")
         
         # Potem dodaj do historii już oczyszczoną wersję
         add_to_history(user_id, "assistant", cleaned_response)
@@ -1461,7 +1446,6 @@ PAMIĘTAJ: Zawsze odpowiadaj pełnymi zdaniami, NIGDY pojedynczymi słowami jak 
         logger.error(f"❌ Błąd AI Smart: {e}")
         return "Przepraszam, wystąpił błąd. Spróbuj ponownie."
 
-# DODAJ na końcu bot_logic_ai.py:
 
 def get_user_stats():
     """Statystyki użytkowników z pamięcią"""
