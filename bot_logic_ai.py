@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import pytz
 from together import Together
 import os
-from calendar_service import get_available_slots, create_appointment, cancel_appointment
+from calendar_service import format_available_slots, create_appointment, cancel_appointment
 
 logger = logging.getLogger(__name__)
 
@@ -282,33 +282,15 @@ d) DOPIERO gdy masz WSZYSTKIE dane, potwierdź używając dokładnego formatu
 
 SPRAWDZANIE WOLNYCH TERMINÓW - WAŻNE!:
 Gdy klient pyta o wolne terminy, dostępne godziny, terminy na konkretny dzień, MUSISZ użyć formatu:
-CHECK_AVAILABILITY: [dzień] 
-
-NIE WYMYŚLAJ TERMINÓW! ZAWSZE UŻYJ CHECK_AVAILABILITY!
 
 PRZYKŁADY OBOWIĄZKOWE:
 👤 "jakie macie wolne terminy na jutro?"
-🤖 "CHECK_AVAILABILITY: jutro"
+🤖 "Terminy na jutro: {format_available_slots("Czwartek")}"
 
 👤 "sprawdź wolne terminy na jutro"
-🤖 "CHECK_AVAILABILITY: jutro"
-
-👤 "czy macie wolne terminy na czwartek?"
-🤖 "CHECK_AVAILABILITY: czwartek"
-
-👤 "jakie godziny macie wolne dzisiaj?"
-🤖 "CHECK_AVAILABILITY: dzisiaj"
-
-👤 "chcę sprawdzić terminy na piątek"
-🤖 "CHECK_AVAILABILITY: piątek"
-
-👤 "kiedy macie wolne?"
-🤖 "CHECK_AVAILABILITY: dzisiaj"
+🤖 "Terminy na jutro: {format_available_slots("Czwartek")}"
 
 NIGDY NIE WYMYŚLAJ TERMINÓW TYPU "9:00, 10:00, 11:00"!
-ZAWSZE użyj CHECK_AVAILABILITY i pozwól systemowi sprawdzić prawdziwe terminy!
-
-Po użyciu CHECK_AVAILABILITY system automatycznie pokaże dostępne godziny z kalendarza Google.
 
 4️⃣ POZOSTAŁE:
 - Odpowiadaj naturalnie na pytania
@@ -506,92 +488,6 @@ PAMIĘTAJ:
                         
             except Exception as e:
                 logger.error(f"❌ Błąd integracji kalendarza anulacji: {e}")
-        
-        # 🔧 SPRAWDZANIE WOLNYCH TERMINÓW
-        if "CHECK_AVAILABILITY:" in cleaned_response:
-            try:
-                # Wyciągnij dzień z odpowiedzi AI
-                availability_match = re.search(r"CHECK_AVAILABILITY:\s*(.+)", cleaned_response)
-                if availability_match:
-                    requested_day = availability_match.group(1).strip()
-                    logger.info(f"📅 Sprawdzanie terminów dla: {requested_day}")
-                    
-                    # Konwertuj względne dni na konkretne daty
-                    tz = pytz.timezone('Europe/Warsaw')
-                    now = datetime.now(tz)
-                    
-                    target_date = None
-                    
-                    if requested_day.lower() in ['dzisiaj', 'dziś']:
-                        target_date = now.date()
-                    elif requested_day.lower() == 'jutro':
-                        target_date = (now + timedelta(days=1)).date()
-                    elif requested_day.lower() in ['poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota']:
-                        # Mapowanie dni
-                        day_mapping = {
-                            'poniedziałek': 0, 'wtorek': 1, 'środa': 2,
-                            'czwartek': 3, 'piątek': 4, 'sobota': 5
-                        }
-                        target_day = day_mapping[requested_day.lower()]
-                        current_day = now.weekday()
-                        
-                        if target_day > current_day:
-                            days_ahead = target_day - current_day
-                        elif target_day == current_day:
-                            days_ahead = 0
-                        else:
-                            days_ahead = 7 - (current_day - target_day)
-                        
-                        target_date = (now + timedelta(days=days_ahead)).date()
-                    
-                    if target_date:
-                        # 🔧 UŻYJ FUNKCJI get_available_slots:
-                        available_slots = get_available_slots(target_date)
-                        
-                        if available_slots:
-                            logger.info(f"📅 Znaleziono wolne terminy: {available_slots}")
-                            
-                            # Formatuj odpowiedź z wolnymi terminami
-                            day_name = target_date.strftime('%A')
-                            day_names = {
-                                'Monday': 'poniedziałek', 'Tuesday': 'wtorek', 'Wednesday': 'środa',
-                                'Thursday': 'czwartek', 'Friday': 'piątek', 'Saturday': 'sobota'
-                            }
-                            day_pl = day_names.get(day_name, day_name)
-                            
-                            slots_text = "\n".join([f"⏰ {slot}" for slot in available_slots])
-                            
-                            cleaned_response = f"📅 Wolne terminy na {day_pl} ({target_date.strftime('%d.%m.%Y')}):\n\n{slots_text}\n\n😊 Który termin Ci odpowiada?"
-                        else:
-                            logger.info(f"📅 Brak wolnych terminów na: {target_date}")
-                            cleaned_response = f"😔 Niestety, nie mamy wolnych terminów na {requested_day}. Sprawdź inny dzień lub skontaktuj się z salonem."
-                    else:
-                        logger.error(f"❌ Nie można określić daty dla: {requested_day}")
-                        cleaned_response = "Nie rozumiem którego dnia dotyczy pytanie. Możesz spytać o 'dzisiaj', 'jutro' lub konkretny dzień tygodnia? 😊"
-                
-                # Usuń CHECK_AVAILABILITY z odpowiedzi
-                cleaned_response = re.sub(r"CHECK_AVAILABILITY:.*?\n?", "", cleaned_response, flags=re.IGNORECASE)
-                
-            except Exception as e:
-                logger.error(f"❌ Błąd sprawdzania terminów: {e}")
-                cleaned_response = "Przepraszam, wystąpił problem ze sprawdzaniem terminów. Spróbuj ponownie. 😊"
-        
-        # 🔧 WALIDACJA - SPRAWDŹ CZY BOT WYMYŚLA TERMINY
-        if any(keyword in user_message.lower() for keyword in ['wolne terminy', 'dostępne', 'kiedy macie', 'jakie godziny', 'sprawdź terminy']):
-            if "CHECK_AVAILABILITY:" not in cleaned_response:
-                logger.warning(f"⚠️ Bot nie użył CHECK_AVAILABILITY dla: {user_message}")
-                # Wymusz użycie CHECK_AVAILABILITY
-                if 'jutro' in user_message.lower():
-                    cleaned_response = "CHECK_AVAILABILITY: jutro"
-                elif 'dzisiaj' in user_message.lower() or 'dziś' in user_message.lower():
-                    cleaned_response = "CHECK_AVAILABILITY: dzisiaj"
-                elif any(day in user_message.lower() for day in ['poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota']):
-                    for day in ['poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota']:
-                        if day in user_message.lower():
-                            cleaned_response = f"CHECK_AVAILABILITY: {day}"
-                            break
-                else:
-                    cleaned_response = "CHECK_AVAILABILITY: dzisiaj"
         
         # Potem dodaj do historii już oczyszczoną wersję
         add_to_history(user_id, "assistant", cleaned_response)
