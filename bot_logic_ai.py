@@ -106,25 +106,105 @@ MAPOWANIE WZGLĘDNYCH DAT:
 # ==============================================
 
 def clean_thinking_response_enhanced(response_text):
-    """Usuwa <think> tagi ale zachowuje treść odpowiedzi"""
+    """Usuwa procesy myślowe i znajduje prawdziwą odpowiedź"""
     if not response_text:
         return ""
         
     original = response_text
     cleaned = response_text
     
-    # 1. USUŃ WSZYSTKIE THINKING BLOKI
+    # 1. USUŃ THINKING BLOKI
     cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
     cleaned = re.sub(r'<thinking>.*?</thinking>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
     
     # 2. USUŃ NIEDOMKNIĘTE THINKING TAGI
-    cleaned = re.sub(r'<think[^>]*>.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
-    cleaned = re.sub(r'<thinking[^>]*>.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(r'<think[^>]*>.*?$', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(r'<thinking[^>]*>.*?$', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
     
     # 3. USUŃ WSZYSTKIE TAGI HTML
     cleaned = re.sub(r'<[^>]*>', '', cleaned)
     
-    # 4. USUŃ TYPOWE AI INTRO PHRASES (TYLKO NA POCZĄTKU)
+    # 🔧 4. USUŃ PROCESY MYŚLOWE AI (AGRESYWNE REGUŁY):
+    thinking_patterns = [
+        r'Okay, I need to handle.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'First, I remember.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'The client wrote.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'I should start with.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'Then, on the next line.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'But wait, the system.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'So, the correct command.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'Putting it all together.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'That should correctly.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'which means.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'Since tomorrow is.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'my response will be.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'trigger the system.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'so earlier times.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'So, in this case.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'Wait, but the example.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'Therefore, I should.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'applying that logic.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'since it\'s \d+:\d+.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'Therefore, the available.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'would be from.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'as the next day.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'in 30-minute.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+        r'but only the ones.*?(?=\n[A-ZĄĆĘŁŃÓŚŹŻ]|$)',
+    ]
+    
+    for pattern in thinking_patterns:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+    
+    # 5. USUŃ LINIE ZACZYNAJĄCE SIĘ OD TYPOWYCH FRAZ AI
+    thinking_lines = [
+        r'^Okay, I need to.*$',
+        r'^First, I remember.*$',
+        r'^The client wrote.*$',
+        r'^I should start.*$',
+        r'^Then, on the next.*$',
+        r'^But wait, the system.*$',
+        r'^So, the correct.*$',
+        r'^Putting it all.*$',
+        r'^That should correctly.*$',
+        r'^which means.*$',
+        r'^Since tomorrow is.*$',
+        r'^my response will be.*$',
+        r'^trigger the system.*$',
+        r'^s \d+:\d+.*$',
+        r'^So, .*$',
+        r'^Wait, .*$',
+        r'^Therefore, .*$',
+        r'^Since .*$',
+        r'^Looking at .*$',
+        r'^Based on .*$',
+        r'^Given that .*$',
+        r'^This means .*$',
+        r'^The logic .*$',
+        r'^I need to .*$',
+        r'^Let me .*$',
+        r'^which is .*$',
+        r'^from \d+:\d+ AM.*$',
+        r'^would be:.*$',
+        r'^as the next day.*$',
+        r'^in 30-minute.*$',
+        r'^but only the ones.*$',
+    ]
+    
+    lines = cleaned.split('\n')
+    filtered_lines = []
+    
+    for line in lines:
+        skip_line = False
+        for pattern in thinking_lines:
+            if re.match(pattern, line.strip(), re.IGNORECASE):
+                skip_line = True
+                break
+        if not skip_line:
+            filtered_lines.append(line)
+    
+    cleaned = '\n'.join(filtered_lines)
+    
+    # 6. USUŃ TYPOWE AI INTRO PHRASES (TYLKO NA POCZĄTKU)
     intro_phrases = [
         r'^okay,?\s+so.*?[.!]\s*',
         r'^let\s+me\s+go\s+through.*?[.!]\s*',
@@ -135,27 +215,24 @@ def clean_thinking_response_enhanced(response_text):
     for phrase in intro_phrases:
         cleaned = re.sub(phrase, '', cleaned, flags=re.IGNORECASE)
     
-    # 5. USUŃ POJEDYNCZE KATEGORIE AI (jeśli to cała odpowiedź)
+    # 7. USUŃ POJEDYNCZE KATEGORIE AI
     single_word_categories = ["CONTACT_DATA", "BOOKING", "ASK_AVAILABILITY", "WANT_APPOINTMENT", "CANCEL_VISIT", "OTHER_QUESTION"]
     
     cleaned_stripped = cleaned.strip()
     if cleaned_stripped in single_word_categories:
-        # To jest błędna odpowiedź - AI zwróciło tylko kategorię
         logger.warning(f"⚠️ AI zwróciło tylko kategorię: {cleaned_stripped}")
         return "Cześć! Jak mogę ci pomóc? 😊"
     
-    # 6. USUŃ KATEGORIE TYLKO Z POCZĄTKU/KOŃCA LINII
+    # 8. USUŃ KATEGORIE TYLKO Z POCZĄTKU/KOŃCA LINII
     for category in single_word_categories:
-        # Usuń kategorię z początku linii + opcjonalne znaki
         cleaned = re.sub(rf'^{category}[\s\.\-]*', '', cleaned, flags=re.IGNORECASE | re.MULTILINE)
-        # Usuń kategorię z końca linii + opcjonalne znaki  
         cleaned = re.sub(rf'[\s\.\-]*{category}$', '', cleaned, flags=re.IGNORECASE | re.MULTILINE)
     
-    # 7. WYCZYŚĆ PUSTE LINIE I BIAŁE ZNAKI
+    # 9. WYCZYŚĆ PUSTE LINIE I BIAŁE ZNAKI
     cleaned = '\n'.join(line.strip() for line in cleaned.split('\n') if line.strip())
     cleaned = cleaned.strip()
     
-    # 8. JEŚLI PO CZYSZCZENIU NICZEGO NIE MA, ZWRÓĆ DOMYŚLNĄ ODPOWIEDŹ
+    # 10. JEŚLI PO CZYSZCZENIU NICZEGO NIE MA, ZWRÓĆ DOMYŚLNĄ ODPOWIEDŹ
     if not cleaned or len(cleaned) < 5:
         logger.warning(f"⚠️ Pusta odpowiedź po czyszczeniu z: '{original[:100]}...'")
         return "Cześć! Jak mogę ci pomóc? 😊"
@@ -281,16 +358,38 @@ d) DOPIERO gdy masz WSZYSTKIE dane, potwierdź używając dokładnego formatu
 - "pojutrze" = drugi dzień po dzisiejszym
 
 SPRAWDZANIE WOLNYCH TERMINÓW - WAŻNE!:
-Gdy klient pyta o wolne terminy, dostępne godziny, terminy na konkretny dzień, MUSISZ użyć formatu:
+Gdy klient pyta o wolne terminy, dostępne godziny, terminy na konkretny dzień, MUSISZ:
+
+1. Odpowiedzieć naturalnie: "Sprawdzam dostępne terminy na [dzień]..."
+2. Następnie w OSOBNEJ LINII dodać komendę: CHECK_AVAILABILITY:[dzień]
+3. Zwróc jedynie dwie linie tekstu jak powyzej, "Sprawdzam dostępne terminy na [dzień]..." oraz CHECK_AVAILABILITY:[dzień. Nic więcej. 
 
 PRZYKŁADY OBOWIĄZKOWE:
 👤 "jakie macie wolne terminy na jutro?"
-🤖 "Terminy na jutro: {format_available_slots("Czwartek")}"
+🤖 "Sprawdzam dostępne terminy na jutro... 😊
+CHECK_AVAILABILITY:jutro"
 
-👤 "sprawdź wolne terminy na jutro"
-🤖 "Terminy na jutro: {format_available_slots("Czwartek")}"
+👤 "wolne terminy na piątek?"
+🤖 "Sprawdzam wolne terminy na piątek!
+CHECK_AVAILABILITY:piątek"
+
+👤 "sprawdź terminy na dzisiaj"
+🤖 "Sprawdzam terminy na dzisiaj...
+CHECK_AVAILABILITY:dzisiaj"
+
+👤 "masz coś wolnego na sobotę?"
+🤖 "Sprawdzam dostępność na sobotę! 😊
+CHECK_AVAILABILITY:sobota"
+
+-------------------------------------------------
+FORMAT: 
+Linia 1: Naturalna odpowiedź
+Linia 2: CHECK_AVAILABILITY:[dzień]
+Linia 3: Pusta nic więcej nie dodajesz od siebie!
+-------------------------------------------------
 
 NIGDY NIE WYMYŚLAJ TERMINÓW TYPU "9:00, 10:00, 11:00"!
+ZAWSZE używaj CHECK_AVAILABILITY gdy klient pyta o wolne terminy!
 
 4️⃣ POZOSTAŁE:
 - Odpowiadaj naturalnie na pytania
@@ -312,8 +411,39 @@ PAMIĘTAJ:
         
         bot_response = response.choices[0].message.content
         
-        # 🔧 UŻYJ FUNKCJI clean_thinking_response_enhanced:
+        # 🔧 ZAWSZE WYCZYŚĆ ODPOWIEDŹ AI NAJPIERW:
+        bot_response_original = bot_response  # Zachowaj oryginał
         cleaned_response = clean_thinking_response_enhanced(bot_response)
+        
+        # 🔧 SPRAWDŹ CZY AI CHCE SPRAWDZIĆ DOSTĘPNOŚĆ:
+        if "CHECK_AVAILABILITY:" in bot_response_original:
+            try:
+                # Wyciągnij dzień z oryginalnej odpowiedzi AI
+                day_match = re.search(r'CHECK_AVAILABILITY:(\w+)', bot_response_original)
+                if day_match:
+                    day = day_match.group(1).strip()
+                    logger.info(f"📅 AI prosi o sprawdzenie terminów na: {day}")
+                    
+                    # Wywołaj funkcję kalendarza
+                    availability_result = format_available_slots(day)
+                    
+                    # 🔧 USUŃ KOMENDĘ Z OCZYSZCZONEJ ODPOWIEDZI (jeśli nadal tam jest):
+                    natural_response = re.sub(r'CHECK_AVAILABILITY:\w+', '', cleaned_response).strip()
+                    
+                    # Jeśli zostało coś z naturalnej odpowiedzi, użyj tego + wynik
+                    if natural_response and len(natural_response) > 10:
+                        cleaned_response = f"{natural_response}\n\n{availability_result}"
+                    else:
+                        # Tylko wynik kalendarza
+                        cleaned_response = availability_result
+                    
+                else:
+                    logger.error("❌ Nie znaleziono dnia w CHECK_AVAILABILITY")
+                    
+            except Exception as e:
+                logger.error(f"❌ Błąd przetwarzania CHECK_AVAILABILITY: {e}")
+        
+        # cleaned_response jest już oczyszczone w obu przypadkach!
         
         # 🔧 DETEKCJA REZERWACJI I DODANIE DO KALENDARZA
         if "✅ REZERWACJA POTWIERDZONA:" in cleaned_response:

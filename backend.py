@@ -46,6 +46,44 @@ if missing_vars:
 else:
     logger.info("✅ Wszystkie zmienne środowiskowe załadowane")
 
+processed_messages = set()  # Cache przetworzonych wiadomości
+MAX_CACHE_SIZE = 1000       # Maksymalny rozmiar cache
+
+def is_message_processed(message_id):
+    """Sprawdź czy wiadomość została już przetworzona"""
+    return message_id in processed_messages
+
+def mark_message_processed(message_id):
+    """Oznacz wiadomość jako przetworzoną"""
+    processed_messages.add(message_id)
+    
+    # Ogranicz rozmiar cache
+    if len(processed_messages) > MAX_CACHE_SIZE:
+        # Usuń najstarsze elementy (simplified)
+        oldest_items = list(processed_messages)[:100]
+        for item in oldest_items:
+            processed_messages.remove(item)
+
+def handle_message(sender_id, message_text, message_id):
+    """Obsłuż wiadomość z deduplikacją"""
+    
+    # 🔧 SPRAWDŹ CZY WIADOMOŚĆ BYŁA JUŻ PRZETWORZONA:
+    if is_message_processed(message_id):
+        logger.info(f"🔄 Wiadomość już przetworzona: {message_id} - POMIJAM")
+        return
+    
+    # Oznacz jako przetworzoną
+    mark_message_processed(message_id)
+    
+    logger.info(f"💬 Wiadomość od {sender_id}: {message_text}")
+    
+    # Przetwórz wiadomość
+    response = process_user_message_smart(message_text, sender_id)
+    
+    # 🔧 POPRAWKA - UŻYJ PRAWIDŁOWEJ NAZWY FUNKCJI:
+    send_facebook_message(sender_id, response)
+    logger.info(f"✅ Wiadomość wysłana do {sender_id}: '{response[:50]}...'")
+    
 def get_page_id():
     """Pobierz ID strony z tokenu"""
     try:
@@ -117,91 +155,69 @@ def _send_single_message(recipient_id, message_text):
 # FACEBOOK WEBHOOK ENDPOINTS
 # ==============================================
 
-@app.route('/', methods=['GET', 'POST'])
-def webhook():
-    """Główny endpoint dla Facebook webhook"""
-    
-    if request.method == 'GET':
-        # WERYFIKACJA WEBHOOK PRZEZ FACEBOOK
-        verify_token = request.args.get('hub.verify_token')
-        challenge = request.args.get('hub.challenge')
-        
-        logger.info(f"🔍 Facebook weryfikuje webhook. Token: {verify_token}")
-        
-        if verify_token == FACEBOOK_VERIFY_TOKEN:
-            logger.info("✅ Webhook zweryfikowany przez Facebook!")
-            return challenge
-        else:
-            logger.error(f"❌ Nieprawidłowy token weryfikacji. Oczekiwano: {FACEBOOK_VERIFY_TOKEN}")
-            return "Unauthorized", 401
-    
-    elif request.method == 'POST':
-        # OBSŁUGA WIADOMOŚCI Z FACEBOOK MESSENGER
-        try:
-            data = request.json
-            logger.info(f"📨 Webhook data: {json.dumps(data, indent=2)}")
-            
-            if data.get('object') == 'page':
-                for entry in data.get('entry', []):
-                    for messaging_event in entry.get('messaging', []):
-                        
-                        # Sprawdź czy to wiadomość tekstowa (NIE echo)
-                        if (messaging_event.get('message') and 
-                            messaging_event['message'].get('text') and 
-                            not messaging_event['message'].get('is_echo')):
-                            
-                            sender_id = messaging_event['sender']['id']
-                            message_text = messaging_event['message']['text']
-                            
-                            logger.info(f"💬 Wiadomość od {sender_id}: {message_text}")
-                            
-                            # PRZETWÓRZ PRZEZ BOT LOGIC
-                            ai_response = process_user_message_smart(message_text, sender_id)
-                            
-                            # Wyślij odpowiedź
-                            send_facebook_message(sender_id, ai_response)
-            
-            return "OK", 200
-            
-        except Exception as e:
-            logger.error(f"❌ Błąd webhook: {e}")
-            return "Error", 500
-
 # ==============================================
-# WEB CHAT API ENDPOINTS (dla strony www)
+# FACEBOOK WEBHOOK ENDPOINTS
 # ==============================================
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    """API endpoint dla chat'a na stronie www"""
+@app.route('/', methods=['GET'])
+def webhook_verify():
+    """Weryfikacja webhook'a Facebook"""
     try:
-        if not request.json or 'messages' not in request.json:
-            return jsonify({'error': 'Brak wiadomości w zapytaniu'}), 400
+        # Pobierz parametry z zapytania
+        mode = request.args.get('hub.mode')
+        challenge = request.args.get('hub.challenge')
+        verify_token = request.args.get('hub.verify_token')
         
-        data = request.json
-        user_messages = data['messages']
+        logger.info(f"🔍 Weryfikacja webhook: mode={mode}, token={verify_token}")
         
-        # Pobierz ostatnią wiadomość użytkownika
-        if user_messages:
-            last_message = user_messages[-1]
-            user_message = last_message.get('content', '')
-            
-            # 🔧 POPRAWKA - WYWOŁAJ FUNKCJĘ Z PARAMETRAMI:
-            response_text = process_user_message_smart(user_message, user_id="web_user")
-            
-            return jsonify({
-                'response': response_text,
-                'status': 'success'
-            })
+        # Sprawdź czy to żądanie weryfikacji
+        if mode == 'subscribe' and verify_token == FACEBOOK_VERIFY_TOKEN:
+            logger.info("✅ Webhook zweryfikowany pomyślnie!")
+            return challenge, 200
         else:
-            return jsonify({'error': 'Brak wiadomości'}), 400
-        
+            logger.error(f"❌ Weryfikacja nieudana: oczekiwano '{FACEBOOK_VERIFY_TOKEN}', otrzymano '{verify_token}'")
+            return 'Błąd weryfikacji', 403
+            
     except Exception as e:
-        logger.error(f"Błąd API: {str(e)}")
-        return jsonify({
-            'error': 'Wystąpił błąd serwera',
-            'status': 'error'
-        }), 500
+        logger.error(f"❌ Błąd weryfikacji webhook: {e}")
+        return 'Błąd serwera', 500
+
+@app.route('/', methods=['POST'])
+def webhook():
+    """Obsługa wiadomości Facebook"""
+    data = request.get_json()
+    
+    # Log przychodzących danych
+    logger.info(f"📨 Webhook data: {json.dumps(data, indent=2, ensure_ascii=False)}")
+    
+    if data['object'] == 'page':
+        for entry in data['entry']:
+            for messaging_event in entry['messaging']:
+                
+                # 🔧 SPRAWDŹ CZY TO WIADOMOŚĆ TEKSTOWA:
+                if 'message' in messaging_event and 'text' in messaging_event['message']:
+                    
+                    # 🔧 POMIJAJ ECHO WIADOMOŚCI (wiadomości wysłane przez bota):
+                    if messaging_event['message'].get('is_echo', False):
+                        logger.info("🔄 Echo wiadomości - pomijam")
+                        continue
+                    
+                    sender_id = messaging_event['sender']['id']
+                    message_text = messaging_event['message']['text']
+                    message_id = messaging_event['message']['mid']  # ← KLUCZOWE!
+                    
+                    # 🔧 OBSŁUŻ Z DEDUPLIKACJĄ:
+                    handle_message(sender_id, message_text, message_id)
+                
+                # Inne typy eventów (delivery, read, etc.)
+                elif 'delivery' in messaging_event:
+                    logger.info("📨 Delivery receipt - pomijam")
+                elif 'read' in messaging_event:
+                    logger.info("📨 Read receipt - pomijam")
+                else:
+                    logger.info(f"📨 Nieznany event: {messaging_event}")
+    
+    return 'OK', 200
 
 @app.route('/api/health', methods=['GET'])
 def health_check():

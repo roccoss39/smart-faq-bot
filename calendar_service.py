@@ -561,33 +561,20 @@ def get_available_slots_for_day(target_day_name, slot_duration=30):
         logger.error(f"❌ Błąd pobierania terminów dla {target_day_name}: {e}")
         return []
     
-# DODAJ w bot_logic_ai.py po funkcji get_current_date_info:
-
-# DODAJ w bot_logic_ai.py po get_current_date_info:
-
 def format_available_slots(requested_day):
     """Formatuje sloty w ładny sposób z polskimi nazwami dni"""
     try:
+        from datetime import datetime, timedelta
+        import pytz
         
-        # Mapuj względne dni na nazwy
+        # 🔧 DYNAMICZNE MAPOWANIE DNI (nie hardcoded!):
         tz = pytz.timezone('Europe/Warsaw')
         now = datetime.now(tz)
         
-        day_mapping = {
-            'jutro': 'czwartek',
-            'dzisiaj': 'środa',
-            'pojutrze': 'piątek'
-        }
+        # Oblicz target_date na początku
+        target_date = None
+        target_day_name = None
         
-        target_day = day_mapping.get(requested_day.lower(), requested_day.lower())
-        
-        # Pobierz pełne dane terminów
-        slots_data = get_available_slots_for_day(target_day)
-        
-        if not slots_data:
-            return f"😔 Niestety, nie mamy wolnych terminów na {requested_day}."
-        
-        # Oblicz datę dla wyświetlenia
         if requested_day.lower() == 'jutro':
             target_date = (now + timedelta(days=1)).date()
         elif requested_day.lower() == 'dzisiaj':
@@ -613,6 +600,21 @@ def format_available_slots(requested_day):
             else:
                 target_date = now.date()
         
+        # 🔧 KONWERTUJ target_date NA NAZWĘ DNIA:
+        day_names_num_to_pl = {
+            0: 'poniedziałek', 1: 'wtorek', 2: 'środa',
+            3: 'czwartek', 4: 'piątek', 5: 'sobota'
+        }
+        target_day_name = day_names_num_to_pl.get(target_date.weekday())
+        
+        logger.info(f"📅 Requested: {requested_day} → Date: {target_date} → Day: {target_day_name}")
+        
+        # 🔧 POBIERZ DANE DLA PRAWIDŁOWEGO DNIA:
+        slots_data = get_available_slots_for_day(target_day_name)
+        
+        if not slots_data:
+            return f"😔 Niestety, nie mamy wolnych terminów na {requested_day}."
+        
         # 🔧 MAPOWANIE ANGIELSKICH DNI NA POLSKIE:
         day_names_eng_to_pl = {
             'Monday': 'Poniedziałek',
@@ -625,11 +627,7 @@ def format_available_slots(requested_day):
         }
         
         # Formatuj odpowiedź
-        day_names = {
-            0: 'poniedziałek', 1: 'wtorek', 2: 'środa',
-            3: 'czwartek', 4: 'piątek', 5: 'sobota'
-        }
-        day_pl = day_names.get(target_date.weekday(), 'nieznany')
+        day_pl = day_names_num_to_pl.get(target_date.weekday(), 'nieznany')
         date_str = target_date.strftime('%d.%m.%Y')
         
         # 🔧 ZAMIEŃ ANGIELSKIE NAZWY DNI NA POLSKIE:
