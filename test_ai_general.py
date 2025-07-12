@@ -379,118 +379,24 @@ if __name__ == "__main__":
         
         if test_name == "all":
             run_all_tests()
-        def test_intent_classification_accuracy():
-            """Test dokładności klasyfikacji intencji AI"""
-            print("\n🧪 TEST DOKŁADNOŚCI KLASYFIKACJI INTENCJI")
-            print("="*50)
-            
-            test_cases = [
-                # CONTACT_DATA cases
-                ("Jan Kowalski 123456789", "CONTACT_DATA"),
-                ("Anna Nowak, tel. 555666777", "CONTACT_DATA"),
-                ("Piotr Wiśniewski, numer: 111222333", "CONTACT_DATA"),
-                
-                # BOOKING cases  
-                ("poniedziałek 10:00", "BOOKING"),
-                ("wtorek 11:30 strzyżenie", "BOOKING"),
-                ("środa 15:00", "BOOKING"),
-                
-                # CANCEL_VISIT cases
-                ("chcę anulować wizytę", "CANCEL_VISIT"),
-                ("odwołaj termin", "CANCEL_VISIT"),
-                ("rezygnuję z wizyty", "CANCEL_VISIT"),
-                
-                # ASK_AVAILABILITY cases
-                ("wolne terminy?", "ASK_AVAILABILITY"),
-                ("dostępne godziny w piątek?", "ASK_AVAILABILITY"),
-                ("kiedy można się umówić?", "ASK_AVAILABILITY"),
-                
-                # WANT_APPOINTMENT cases
-                ("chcę się umówić", "WANT_APPOINTMENT"),
-                ("potrzebuję wizyty", "WANT_APPOINTMENT"),
-                ("umów mnie", "WANT_APPOINTMENT"),
-            ]
-            
-            correct = 0
-            total = len(test_cases)
-            
-            for message, expected_intent in test_cases:
-                actual_intent = analyze_user_intent_ai_robust(message)
-                is_correct = actual_intent == expected_intent
-                
-                print(f"📝 '{message}' → {actual_intent} {'✅' if is_correct else '❌'}")
-                if not is_correct:
-                    print(f"   Oczekiwano: {expected_intent}")
-                
-                if is_correct:
-                    correct += 1
-            
-            accuracy = (correct / total) * 100
-            print(f"\n📊 DOKŁADNOŚĆ: {correct}/{total} ({accuracy:.1f}%)")
-            
-            if accuracy >= 85:
-                print("✅ SUKCES: Wysoka dokładność klasyfikacji!")
-            elif accuracy >= 70:
-                print("⚠️ UWAGA: Średnia dokładność, może wymagać poprawy")
-            else:
-                print("❌ BŁĄD: Niska dokładność, wymaga natychmiastowej poprawy")
-
-        def test_conversation_flow_variations():
-            """Test różnych wariantów przepływu rozmowy"""
-            print("\n🧪 TEST WARIANTÓW PRZEPŁYWU ROZMOWY")
-            print("="*50)
-            
-            # Wariant 1: Wszystko w jednej wiadomości
-            print("🔄 WARIANT 1: Wszystko naraz")
-            user_id = "flow_test_1"
-            response = process_user_message_smart("Jan Kowalski 123456789 piątek 14:00 strzyżenie", user_id)
-            print(f"👤 User: Jan Kowalski 123456789 piątek 14:00 strzyżenie")
-            print(f"🤖 AI: {response}")
-            
-            if "REZERWACJA POTWIERDZONA" in response:
-                print("✅ SUKCES: Pełna rezerwacja w jednej wiadomości")
-            else:
-                print("❌ BŁĄD: Nie rozpoznano pełnej rezerwacji")
-            print("-" * 30)
-            
-            # Wariant 2: Odwrócona kolejność (najpierw dane, potem termin)
-            print("🔄 WARIANT 2: Najpierw dane, potem termin")
-            user_id = "flow_test_2"
-            r1 = process_user_message_smart("chcę się umówić", user_id)
-            r2 = process_user_message_smart("Maria Kowalczyk 987654321", user_id)
-            r3 = process_user_message_smart("czwartek 16:00", user_id)
-            
-            print(f"🤖 Step 1: {r1[:50]}...")
-            print(f"🤖 Step 2: {r2[:50]}...")
-            print(f"🤖 Step 3: {r3[:50]}...")
-            
-            if "REZERWACJA POTWIERDZONA" in r3:
-                print("✅ SUKCES: Rezerwacja w odwróconej kolejności")
-            else:
-                print("❌ BŁĄD: Nie zadziałała odwrócona kolejność")
-            print("-" * 30)
-            
-            # Wariant 3: Z przerwami i dodatkowymi pytaniami
-            print("🔄 WARIANT 3: Z przerwami")
-            user_id = "flow_test_3"
-            responses = []
-            messages = [
-                "cześć",
-                "chcę się umówić", 
-                "ile kosztuje strzyżenie?",
-                "ok, wtorek 10:00",
-                "Tomasz Nowak 555444333"
-            ]
-            
-            for msg in messages:
-                response = process_user_message_smart(msg, user_id)
-                responses.append(response)
-                print(f"👤 {msg} → 🤖 {response[:40]}...")
-            
-            final_response = responses[-1]
-            if "REZERWACJA POTWIERDZONA" in final_response:
-                print("✅ SUKCES: Rezerwacja z przerwami")
-            else:
-                print("❌ BŁĄD: Nie zadziałała rezerwacja z przerwami")
-
-        def test_error_handling_and_recovery():
+        elif test_name == "booking":
+            test_booking_complete_flow()
+        elif test_name == "cancel":
+            test_cancellation_complete_flow()
+        elif test_name == "memory":
+            test_memory_and_context()
+        elif test_name == "isolation":
+            test_user_isolation()
+        elif test_name == "edge":
+            test_edge_cases()
+        elif test_name == "clean":
+            test_cleaning_function_extended()
+        elif test_name == "performance":
+            test_performance_and_stats()
+        elif test_name == "services":
+            test_services_and_pricing()
+        else:
+            print("❌ Nieznany test. Dostępne: all, booking, cancel, memory, isolation, edge, clean, performance, services")
+    else:
+        # Domyślnie uruchom podstawowe testy
+        test_smart_with_existing_calendar()
