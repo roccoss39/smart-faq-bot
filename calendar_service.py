@@ -17,11 +17,13 @@ logger = logging.getLogger(__name__)
 class CalendarService:
     def __init__(self, credentials_file='credentials.json', calendar_id=None):
         self.credentials_file = credentials_file
-        # Użyj zmiennej środowiskowej lub domyślny ID
-        self.calendar_id = calendar_id or os.getenv(
-            'GOOGLE_CALENDAR_ID', 
-            '21719ebf883a6bfdb7c77e49836df6ea2cf711bf89b03d35e52500ffebcf4c0d@group.calendar.google.com'
-        )
+        # Użyj zmiennej środowiskowej - BEZ domyślnego ID!
+        self.calendar_id = calendar_id or os.getenv('GOOGLE_CALENDAR_ID')
+        
+        if not self.calendar_id:
+            logger.warning("⚠️ Brak GOOGLE_CALENDAR_ID w zmiennych środowiskowych")
+            logger.warning("💡 Dodaj GOOGLE_CALENDAR_ID do .env aby włączyć funkcje kalendarza")
+        
         self.timezone = 'Europe/Warsaw'
         self.service = None
         
