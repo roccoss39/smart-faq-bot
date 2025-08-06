@@ -141,7 +141,6 @@ def _send_single_message(recipient_id, message_text):
         response = requests.post(url, json=payload, params=params)
         
         if response.status_code == 200:
-            logger.info(f"✅ Wiadomość wysłana do {recipient_id}: '{message_text[:50]}...'")
             return True
         else:
             logger.error(f"❌ Błąd wysyłania: {response.status_code} - {response.text}")
@@ -224,8 +223,11 @@ def health_check():
     """Health check endpoint"""
     try:
         # 🔧 ZMIEŃ IMPORT:
-        from bot_logic_ai import get_user_stats
-        stats = get_user_stats()
+        from bot_logic_ai import user_conversations
+        stats = {
+            'total_sessions': len(user_conversations),
+            'active_last_hour': len(user_conversations)
+        }
         
         return jsonify({
             'status': 'ok',
@@ -249,20 +251,17 @@ def debug_sessions():
     """Debug endpoint - pokaż aktywne sesje"""
     try:
         # 🔧 ZMIEŃ IMPORT:
-        from bot_logic_ai import user_sessions, user_conversations
+        from bot_logic_ai import user_conversations
         
-        sessions_info = {}
-        for user_id, session in user_sessions.items():
-            sessions_info[user_id] = {
-                'state': session.state,
-                'appointment_data': session.appointment_data,
-                'last_activity': session.last_activity.isoformat(),
-                'conversation_length': len(user_conversations.get(user_id, []))
+        conversations_info = {}
+        for user_id, conversation in user_conversations.items():
+            conversations_info[user_id] = {
+                'conversation_length': len(conversation),
+                'last_message': conversation[-1] if conversation else None
             }
         return jsonify({
-            'active_sessions': len(sessions_info),
-            'conversations': len(user_conversations),
-            'sessions': sessions_info
+            'active_conversations': len(user_conversations),
+            'conversations': conversations_info
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -272,15 +271,12 @@ def debug_reset_session(user_id):
     """Debug endpoint - resetuj sesję użytkownika"""
     try:
         # 🔧 NOWA FUNKCJA RESET Z PAMIĘCIĄ:
-        from bot_logic_ai import user_sessions, user_conversations
+        from bot_logic_ai import user_conversations
         
-        success = False
-        if user_id in user_sessions:
-            del user_sessions[user_id]
-            success = True
-        
+        success = False        
         if user_id in user_conversations:
             del user_conversations[user_id]
+            success = True
         
         return jsonify({
             'success': success,

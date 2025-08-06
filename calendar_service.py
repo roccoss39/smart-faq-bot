@@ -563,6 +563,77 @@ def get_available_slots_for_day(target_day_name, slot_duration=30):
         logger.error(f"❌ Błąd pobierania terminów dla {target_day_name}: {e}")
         return []
     
+def verify_appointment_exists(client_name, client_phone, appointment_datetime, service_type):
+    """
+    Weryfikuje czy spotkanie rzeczywiście istnieje w kalendarzu Google
+    
+    Args:
+        client_name (str): Imię klienta
+        client_phone (str): Telefon klienta  
+        appointment_datetime (datetime): Czas wizyty
+        service_type (str): Rodzaj usługi
+        
+    Returns:
+        dict|False: Informacje o wydarzeniu lub False jeśli nie istnieje
+    """
+    try:
+        calendar_service = get_calendar_service()
+        
+        if not calendar_service.service:
+            logger.error("❌ Calendar service nie jest zainicjalizowany")
+            return False
+        
+        # Sprawdź w zakresie ±2 godzin od planowanego czasu
+        search_start = appointment_datetime - timedelta(hours=2)
+        search_end = appointment_datetime + timedelta(hours=2)
+        
+        logger.info(f"🔍 Weryfikacja spotkania: {client_name} na {appointment_datetime.strftime('%Y-%m-%d %H:%M')}")
+        
+        events = calendar_service.service.events().list(
+            calendarId=calendar_service.calendar_id,
+            timeMin=search_start.isoformat(),
+            timeMax=search_end.isoformat(),
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        
+        events_list = events.get('items', [])
+        
+        for event in events_list:
+            event_start = event['start'].get('dateTime')
+            if not event_start:
+                continue
+                
+            # Parsuj czas wydarzenia
+            event_datetime = datetime.fromisoformat(event_start.replace('Z', '+00:00'))
+            event_datetime = event_datetime.astimezone(pytz.timezone('Europe/Warsaw'))
+            
+            summary = event.get('summary', '')
+            description = event.get('description', '')
+            
+            # Sprawdź dopasowanie
+            time_match = abs((event_datetime - appointment_datetime).total_seconds()) < 300  # ±5 minut
+            name_match = client_name.lower() in summary.lower() or client_name.lower() in description.lower()
+            phone_match = client_phone in description
+            service_match = service_type.lower() in summary.lower() or service_type.lower() in description.lower()
+            
+            if time_match and (name_match or phone_match) and service_match:
+                logger.info(f"✅ Spotkanie zweryfikowane: {summary} - {event_start}")
+                return {
+                    'exists': True,
+                    'event_id': event['id'],
+                    'summary': summary,
+                    'start_time': event_start,
+                    'description': description
+                }
+        
+        logger.warning(f"❌ Spotkanie nie znalezione w kalendarzu: {client_name}, {appointment_datetime}")
+        return False
+        
+    except Exception as e:
+        logger.error(f"❌ Błąd weryfikacji spotkania: {e}")
+        return False
+
 def format_available_slots(requested_day):
     """Formatuje sloty w ładny sposób z polskimi nazwami dni"""
     try:

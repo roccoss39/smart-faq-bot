@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import pytz
 from together import Together
 import os
-from calendar_service import format_available_slots, create_appointment, cancel_appointment
+from calendar_service import format_available_slots, create_appointment, cancel_appointment, verify_appointment_exists
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -42,10 +42,12 @@ def add_to_history(user_id, role, message):
     """Dodaj wiadomość do historii"""
     history = get_user_history(user_id)
     history.append({"role": role, "content": message})
+    logger.info(f"📝 Dodano do historii {role}: '{message[:50]}...' (historia: {len(history)} wiadomości)")
     
     # Ogranicz historię do ostatnich 20 wiadomości
     if len(history) > 20:
         user_conversations[user_id] = history[-20:]
+        logger.info(f"📚 Skrócono historię do 20 wiadomości")
 
 # ==============================================
 # FUNKCJA DATY
@@ -235,7 +237,21 @@ def clean_thinking_response_enhanced(response_text):
     cleaned = '\n'.join(line.strip() for line in cleaned.split('\n') if line.strip())
     cleaned = cleaned.strip()
     
-    # 10. JEŚLI PO CZYSZCZENIU NICZEGO NIE MA, ZWRÓĆ DOMYŚLNĄ ODPOWIEDŹ
+    # 10. USUŃ TYLKO IDENTYCZNE POWTÓRZENIA CAŁYCH BLOKÓW
+    # Nie usuwaj normalnych linii - tylko rzeczywiste duplikaty
+    
+    # 12. LIMIT ODPOWIEDZI (max 500 znaków dla Facebook)
+    if len(cleaned) > 500:
+        logger.warning(f"⚠️ Skracam długą odpowiedź z {len(cleaned)} do 500 znaków")
+        cleaned = cleaned[:500] + "..."
+    
+    # 13. BLOKADA POWTARZAJĄCYCH SIĘ SEPARATORÓW (KRYTYCZNE!)
+    if '---' in cleaned:
+        logger.warning(f"⚠️ USUWAM WSZYSTKIE SEPARATORY - biorę tylko pierwszą część")
+        parts = cleaned.split('---')
+        cleaned = parts[0].strip()  # TYLKO pierwsza część przed pierwszym ---
+    
+    # 14. JEŚLI PO CZYSZCZENIU NICZEGO NIE MA, ZWRÓĆ DOMYŚLNĄ ODPOWIEDŹ
     if not cleaned or len(cleaned) < 5:
         logger.warning(f"⚠️ Pusta odpowiedź po czyszczeniu z: '{original[:100]}...'")
         return "Cześć! Jak mogę ci pomóc? 😊"
@@ -271,6 +287,38 @@ def process_user_message_smart(user_message, user_id):
 - Odpowiadaj ZAWSZE pełnymi zdaniami po polsku!
 - Bądź naturalny, pomocny i przyjazny!
 - ZNASZ AKTUALNĄ DATĘ - używaj jej w odpowiedziach!
+- ⚠️ SPRAWDZAJ GODZINY OTWARCIA: Salon zamyka o 16:00 w sobotę, o 19:00 w dni robocze!
+- ⚠️ JEŚLI JEST PO GODZINACH - nie oferuj wizyt na "dzisiaj"!
+- ⚠️ NIE PISZ "Dzień dobry!" w środku rozmowy - kontynuuj naturalnie!
+- ⚠️ SPRAWDZAJ HISTORIĘ - jeśli rozmowa trwa, nie zaczynaj od nowa!
+- ⚠️ PAMIĘTAJ KONTEKST - jeśli klient już mówił o rezerwacji, kontynuuj proces!
+- ⚠️ NIE RESETUJ rozmowy - jeśli klient podał dzień, przejdź do godziny!
+
+🚫 ABSOLUTNIE ZAKAZANE:
+- NIGDY nie pisz "[imię i nazwisko]", "[telefon]" lub podobnych placeholderów!
+- NIGDY nie rób rezerwacji bez imienia i telefonu klienta!
+- NIGDY nie pisz "Wydarzenie dodane do kalendarza", "Dziękuję! Czekamy", "Data:" - system doda to automatycznie!
+- NIGDY nie używaj przykładowych danych zamiast prawdziwych!
+- ❌ NIGDY nie pisz "Potwierdzam rezerwację" - TYLKO "✅ REZERWACJA POTWIERDZONA:"!
+
+✅ WYMAGANE PRZED REZERWACJĄ:
+1. Imię i nazwisko klienta (podane w tej rozmowie)
+2. Numer telefonu klienta (DOKŁADNIE 9 cyfr, bez kierunkowego)
+3. Dzień wizyty
+4. Godzina wizyty  
+5. Rodzaj usługi
+
+BEZ WSZYSTKICH 5 DANYCH = BEZ REZERWACJI!
+📞 TELEFON: tylko polskie numery 9-cyfrowe (123456789)
+
+PRZYKŁADY POPRAWNEGO FORMATOWANIA:
+✅ DOBRZE: "• Imię i nazwisko: Anna Nowak"
+❌ ŹLE: "• Imię i nazwisko: (wstaw prawdziwe imię)"
+
+✅ DOBRZE: "• Telefon: 987654321" (9 cyfr)
+❌ ŹLE: "• Telefon: (wstaw prawdziwy telefon)"
+❌ ŹLE: "• Telefon: +48123456789" (z kierunkowym)
+❌ ŹLE: "• Telefon: 12345678" (za krótki)
 - **Jeśli użytkownik zada pytanie niezwiązane z salonem, usługami, rezerwacjami, godzinami otwarcia, lokalizacją lub cennikiem – grzecznie odmów odpowiedzi i napisz, że możesz odpowiadać tylko na pytania dotyczące salonu fryzjerskiego "Kleopatra".**
 - Odpowiadaj jedynie na pytania dotyczące salonu - możesz podać gdzie się znajduje!
 - Uważaj na ludzi którzy chcą wyłudzić dane albo zyskać dostęp do systemu
@@ -302,20 +350,47 @@ USŁUGI: Strzyżenie (80zł), Farbowanie (150zł), Stylizacja (120zł)
     KROK 2: PODSUMOWANIE I PYTANIE O POTWIERDZENIE:
     Gdy masz WSZYSTKIE dane, wyświetl podsumowanie i poproś o potwierdzenie:
 
-    📋 PODSUMOWANIE REZERWACJI:
-    • Imię i nazwisko: [imię] [nazwisko]
-    • Data i godzina: [dzień] [godzina]
-    • Usługa: [usługa] ([cena]zł)
-    • Telefon: [telefon]
+    ABSOLUTNIE ZAKAZANE POKAZYWANIE PODSUMOWANIA Z "(nie podano)"!
+    
+    JEŚLI BRAKUJE JAKICHKOLWIEK DANYCH - POPROŚ O NIE!
+    
+    NIGDY nie pisz:
+    • Imię i nazwisko: (nie podano)
+    • Data i godzina: (nie podano)
+    • Usługa: (nie podano)
+    
+    ZAMIAST TEGO napisz:
+    "Potrzebuję jeszcze Twoje imię i nazwisko oraz dzień i godzinę wizyty. Podaj te dane proszę."
 
     Czy wszystkie dane są poprawne? Napisz 'TAK' aby potwierdzić rezerwację lub popraw dane.
 
     KROK 3: FINALNE POTWIERDZENIE:
-    DOPIERO gdy użytkownik napisze "TAK", "POTWIERDZAM", "OK", użyj formatu:
-    ✅ REZERWACJA POTWIERDZONA: [imię] [nazwisko], [dzień] [godzina], [usługa], tel: [telefon]
+    DOPIERO gdy użytkownik napisze "TAK", "POTWIERDZAM", "OK":
+    
+    🔍 NAJPIERW SPRAWDŹ CZY MASZ WSZYSTKIE DANE:
+    ✅ Imię i nazwisko klienta (z tej rozmowy)
+    ✅ Dzień i godzina wizyty (z tej rozmowy)  
+    ✅ Usługa (z tej rozmowy)
+    ✅ Telefon klienta (z tej rozmowy)
+    
+    JEŚLI MASZ WSZYSTKIE DANE - użyj DOKŁADNIE tego formatu:
+    
+    📅 Rezerwuję wizytę w kalendarzu...
+    
+    ZAWSZE UŻYWAJ DOKŁADNIE TEGO FORMATU:
+    
+    ✅ REZERWACJA POTWIERDZONA: [imię nazwisko], [dzień] [godzina], [usługa], tel: [telefon]
+    
+    PRZYKŁAD: ✅ REZERWACJA POTWIERDZONA: Anna Kowalska, poniedziałek 09:00, Strzyżenie, tel: 123456789
+    
+    ⚠️ NIGDY nie pisz "Potwierdzam rezerwację" - TYLKO powyższy format!
+    
+    JEŚLI BRAKUJE JAKICHKOLWIEK DANYCH - poproś o nie ponownie!
+    
+    ⚠️ WAŻNE: SPRAWDŹ HISTORIĘ KONWERSACJI i użyj danych podanych przez TEGO klienta!
 
 
-    PRZYKŁADY POPRAWNEGO PROCESU:
+    PRZYKŁADY POPRAWNEGO PROCESU - ALE NIGDY NIE BIERZ TYCH DANYCH DO REALNEJ REZERWACJI - TO TYLKO PRZYKŁAD:
 
     👤 "jutro o 18"
     🤖 "Super! Jutro czwartek o 18:00! Jaką usługę wybierasz? Mamy strzyżenie (80zł), farbowanie (150zł) lub stylizację (120zł). 😊"
@@ -323,19 +398,19 @@ USŁUGI: Strzyżenie (80zł), Farbowanie (150zł), Stylizacja (120zł)
     👤 "strzyżenie"  
     🤖 "Świetnie! Jutro czwartek 18:00 na strzyżenie. Teraz potrzebuję Twoich danych - imię, nazwisko i telefon. 📞"
 
-    👤 "Jan Kowalski 123456789"
+    👤 "Anna Nowak 987654321"
     🤖 "📋 PODSUMOWANIE REZERWACJI:
-    • Imię i nazwisko: Jan Kowalski
+    • Imię i nazwisko: Anna Nowak
     • Data i godzina: czwartek 18:00  
     • Usługa: Strzyżenie (80zł)
-    • Telefon: 123456789
+    • Telefon: 987654321
 
     Czy wszystkie dane są poprawne? Napisz 'TAK' aby potwierdzić rezerwację lub popraw dane."
 
     👤 "TAK"
-    🤖 "✅ REZERWACJA POTWIERDZONA: Jan Kowalski, czwartek 18:00, Strzyżenie, tel: 123456789
-
-    Dziękuję! Czekamy na Ciebie w salonie! 💇‍♂️"
+    🤖 "📅 Rezerwuję wizytę w kalendarzu...
+    
+    ✅ REZERWACJA POTWIERDZONA: Jan Kowalski, czwartek 18:00, Strzyżenie, tel: 123456789"
 
     BŁĘDNE PRZYKŁADY (NIE RÓB TEGO!):
     ❌ "✅ REZERWACJA POTWIERDZONA" bez wcześniejszego podsumowania
@@ -409,9 +484,8 @@ USŁUGI: Strzyżenie (80zł), Farbowanie (150zł), Stylizacja (120zł)
     🤖 Chatbot:
     ✅ REZERWACJA POTWIERDZONA:
     Tomek Gawron, poniedziałek 17:30, Strzyżenie, tel: 123123123
-    Dziękuję! Czekamy na Ciebie w salonie! 💇‍♂️
-    📅 Wydarzenie dodane do kalendarza Google!
-    🗓️ Data: Monday, 14 July 2025 o 17:30
+    
+    ⚠️ NIGDY nie dodawaj informacji o kalendarzu - system to zrobi automatycznie!
 
     ⏰ WAŻNE - GODZINY REZERWACJI:
     - DOZWOLONE GODZINY: TYLKO pełne godziny (9:00, 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:00, 18:00) 
@@ -438,15 +512,15 @@ USŁUGI: Strzyżenie (80zł), Farbowanie (150zł), Stylizacja (120zł)
 
     KROK 2: PODSUMOWANIE I PYTANIE O POTWIERDZENIE:
     🗑️ PODSUMOWANIE ANULACJI:
-    • Imię i nazwisko: [imię] [nazwisko]
-    • Data i godzina do anulowania: [dzień] [godzina]
-    • Telefon: [telefon]
+    • Imię i nazwisko: (wstaw prawdziwe imię i nazwisko)
+    • Data i godzina do anulowania: (wstaw prawdziwy dzień i godzinę)
+    • Telefon: (wstaw prawdziwy telefon)
 
     Czy na pewno chcesz anulować tę wizytę? Napisz 'TAK' aby potwierdzić anulację.
 
     KROK 3: FINALNE POTWIERDZENIE ANULACJI:
     DOPIERO gdy użytkownik napisze "TAK", "POTWIERDZAM", "ANULUJ", użyj formatu:
-    ❌ ANULACJA POTWIERDZONA: [imię] [nazwisko], [dzień] [godzina], tel: [telefon]
+    ❌ ANULACJA POTWIERDZONA: (wstaw prawdziwe dane w formacie: Imię Nazwisko, dzień godzina, tel: telefon)
 
     ROZPOZNAWANIE POTWIERDZEŃ:
     ZGODĘ: "TAK", "POTWIERDZAM", "OK", "ZGADZA SIĘ", "DOBRZE", "ANULUJ" (przy anulacji)
@@ -464,9 +538,8 @@ INSTRUKCJE DZIAŁANIA:
 
 2️⃣ ANULOWANIE:
 - Gdy klient chce anulować, poproś o: imię, nazwisko, telefon, dzień i godzinę
-- Potwierdź używając dokładnego formatu: 
-  ❌ ANULACJA POTWIERDZONA: [imię] [nazwisko], [dzień] [godzina], tel: [telefon]
-- ZAWSZE używaj tego formatu przy anulowaniu!
+- Potwierdź używając dokładnego formatu z PRAWDZIWYMI danymi klienta
+- ZAWSZE używaj rzeczywistych danych, NIE placeholderów!
 
 3️⃣ INFORMACJE O DACIE:
 - Gdy pyta o datę/dzień - podaj aktualne informacje
@@ -517,7 +590,18 @@ SPRAWDZANIE WOLNYCH TERMINÓW - WAŻNE!:
 PAMIĘTAJ: 
 - NIGDY nie potwierdzaj rezerwacji z pustymi placeholderami!
 - Zbieraj WSZYSTKIE dane PRZED użyciem "✅ REZERWACJA POTWIERDZONA"
-- Zawsze odpowiadaj pełnymi zdaniami!"""
+- Zawsze odpowiadaj pełnymi zdaniami!
+
+🔍 CHECKLIST PRZED REZERWACJĄ:
+1. ✅ Czy mam imię i nazwisko klienta?
+2. ✅ Czy mam numer telefonu klienta (9 cyfr)?
+3. ✅ Czy mam dzień wizyty?
+4. ✅ Czy mam godzinę wizyty?
+5. ✅ Czy mam rodzaj usługi?
+
+TYLKO jeśli wszystkie 5 punktów są ✅ - rób rezerwację!
+JEŚLI którykolwiek jest ❌ - poproś o brakujące dane!
+📞 TELEFON: sprawdź czy ma dokładnie 9 cyfr!"""
 
     try:
         response = client.chat.completions.create(
@@ -562,11 +646,69 @@ PAMIĘTAJ:
         
         # cleaned_response jest już oczyszczone w obu przypadkach!
         
+        # 🔧 BLOKADA BŁĘDNYCH REZERWACJI I PODSUMOWAŃ
+        if "📋 PODSUMOWANIE REZERWACJI:" in cleaned_response:
+            # Sprawdź czy nie ma "(nie podano)" - TYLKO jeśli rzeczywiście brakuje danych
+            if "(nie podano)" in cleaned_response:
+                logger.error("❌ BLOKADA: Podsumowanie z brakującymi danymi!")
+                return "Potrzebuję jeszcze kilku informacji aby dokończyć rezerwację:\n\n• Twoje imię i nazwisko\n• Dzień wizyty (np. poniedziałek, wtorek)\n• Godzina wizyty (np. 10:00, 15:30)\n• Rodzaj usługi (strzyżenie, farbowanie, stylizacja)\n\nPodaj te dane proszę. 😊"
+            
+            # BLOKADA PRZYKŁADOWYCH DANYCH!
+            if "Jan Kowalski" in cleaned_response or "123456789" in cleaned_response:
+                logger.error("❌ BLOKADA: Bot używa przykładowych danych!")
+                return "Potrzebuję Twoich prawdziwych danych kontaktowych:\n\n📞 Podaj swoje imię, nazwisko i numer telefonu\n\nPrzykład: Anna Nowak 987654321"
+        
+        # 🔧 BLOKADA NIEPOTRZEBNYCH PRÓŚB O DANE
+        if "Potrzebuję jeszcze kilku informacji" in cleaned_response and "📋 PODSUMOWANIE REZERWACJI:" not in cleaned_response:
+            logger.error("❌ BLOKADA: Niepotrzebna prośba o dane!")
+            return "Przepraszam za zamieszanie. Spróbujmy ponownie - podaj swoje imię, nazwisko i telefon. 😊"
+        
+        # 🔧 BLOKADA BŁĘDNYCH KOMUNIKATÓW O BŁĘDZIE
+        if "wystąpił błąd podczas przetwarzania" in cleaned_response:
+            logger.error("❌ BLOKADA: Niepotrzebny komunikat błędu!")
+            return "Sprawdzam Twoją rezerwację... Moment proszę. 😊"
+        
+        # 🔧 BLOKADA BŁĘDNYCH FORMATÓW POTWIERDZENIA
+        if "Potwierdzam rezerwację" in cleaned_response or "Wszystkie dane są poprawne" in cleaned_response:
+            logger.error("❌ BLOKADA: Błędny format potwierdzenia!")
+            return "❌ Błąd systemu rezerwacji.\n\nAby dokończyć rezerwację, użyj dokładnego formatu:\n✅ REZERWACJA POTWIERDZONA: [imię nazwisko], [dzień godzina], [usługa], tel: [telefon]\n\nSpróbuj ponownie."
+        
+        if "✅ REZERWACJA POTWIERDZONA:" in cleaned_response:
+            # Sprawdź czy nie ma placeholderów
+            if "[imię" in cleaned_response or "[telefon" in cleaned_response or "[nazwisko" in cleaned_response:
+                logger.error("❌ BLOKADA: Rezerwacja z placeholderami!")
+                return "❌ Błąd systemu rezerwacji. Proszę podać swoje dane kontaktowe (imię, nazwisko, telefon) aby dokończyć rezerwację."
+            
+            # Sprawdź poprawność numeru telefonu (9 cyfr)
+            phone_match = re.search(r'tel: (\d+)', cleaned_response)
+            if phone_match:
+                phone = phone_match.group(1)
+                logger.info(f"🔍 Znaleziono telefon: '{phone}' (długość: {len(phone)})")
+                if len(phone) != 9:
+                    logger.error(f"❌ BLOKADA: Nieprawidłowy numer telefonu: {phone} (długość: {len(phone)})")
+                    return f"❌ Nieprawidłowy numer telefonu: {phone}\n\n📞 Numer telefonu musi mieć dokładnie 9 cyfr (bez kierunkowego).\nPrzykład: 123456789\n\nPodaj poprawny numer telefonu."
+                else:
+                    logger.info(f"✅ Telefon OK: {phone} (9 cyfr)")
+            else:
+                logger.warning(f"⚠️ Nie znaleziono telefonu w: '{cleaned_response[:100]}...'")
+            
+            # Sprawdź czy nie ma fałszywych komunikatów o kalendarzu
+            if "Wydarzenie dodane" in cleaned_response or "Dziękuję! Czekamy" in cleaned_response:
+                logger.error("❌ BLOKADA: Fałszywy komunikat o kalendarzu!")
+                # Usuń fałszywe komunikaty
+                cleaned_response = re.sub(r'📅 Wydarzenie dodane.*?\n?', '', cleaned_response)
+                cleaned_response = re.sub(r'Dziękuję! Czekamy.*?\n?', '', cleaned_response)
+                cleaned_response = re.sub(r'🗓️ Data:.*?\n?', '', cleaned_response)
+        
         # 🔧 DETEKCJA REZERWACJI I DODANIE DO KALENDARZA
         if "✅ REZERWACJA POTWIERDZONA:" in cleaned_response:
             try:
                 # Wyciągnij dane z odpowiedzi AI
-                pattern = r"✅ REZERWACJA POTWIERDZONA: ([^,]+), ([^,]+), ([^,]+), tel: (\d+)"
+                pattern = r"✅ REZERWACJA POTWIERDZONA:\s*\n?\s*([^,]+), ([^,]+), ([^,]+), tel: (\d+)"
+                
+                # Sprawdź czy użytkownik potwierdza (TAK, Ta, OK, etc.)
+                if user_message.lower().strip() in ['tak', 'ta', 'ok', 'potwierdzam', 'zgadza się']:
+                    logger.info(f"🔍 Użytkownik potwierdza: '{user_message}' - szukam danych do rezerwacji")
                 match = re.search(pattern, cleaned_response)
                 
                 if match:
@@ -597,7 +739,17 @@ PAMIĘTAJ:
                         appointment_date = None
                         
                         if day_pl in ['dzisiaj', 'dziś']:
-                            # DZISIAJ = ten sam dzień
+                            # SPRAWDŹ CZY SALON JEST JESZCZE OTWARTY
+                            if now.weekday() == 5:  # Sobota
+                                if now.hour >= 16:  # Po 16:00 w sobotę
+                                    logger.warning(f"⚠️ DZISIAJ po godzinach (sobota {now.hour}:00) - salon zamknięty")
+                                    return "❌ Salon jest już zamknięty (sobota do 16:00). Możesz umówić się na poniedziałek lub inny dzień. 😊"
+                            elif now.weekday() < 5:  # Dni robocze
+                                if now.hour >= 19:  # Po 19:00 w dni robocze
+                                    logger.warning(f"⚠️ DZISIAJ po godzinach ({now.hour}:00) - salon zamknięty")
+                                    return "❌ Salon jest już zamknięty (dni robocze do 19:00). Możesz umówić się na jutro. 😊"
+                            
+                            # DZISIAJ = ten sam dzień (jeśli salon otwarty)
                             appointment_date = now.date()
                             logger.info(f"📅 DZISIAJ: {appointment_date}")
                             
@@ -662,15 +814,46 @@ PAMIĘTAJ:
                                     appointment_time=appointment_datetime
                                 )
                                 
+                                # 🔧 WERYFIKACJA CZY SPOTKANIE RZECZYWIŚCIE ZOSTAŁO ZAPISANE
                                 if calendar_result:
-                                    logger.info(f"📅 Dodano do kalendarza Google: {calendar_result}")
-                                    # 🔧 DODAJ KONKRETNĄ DATĘ DO ODPOWIEDZI:
-                                    date_display = appointment_datetime.strftime('%A, %d %B %Y o %H:%M')
-                                    cleaned_response += f"\n\n📅 Wydarzenie dodane do kalendarza Google!"
-                                    cleaned_response += f"\n🗓️ Data: {date_display}"
+                                    logger.info(f"📅 Próba dodania do kalendarza: {calendar_result}")
+                                    
+                                    # Poczekaj chwilę na synchronizację
+                                    import time
+                                    time.sleep(2)
+                                    
+                                    # Zweryfikuj czy spotkanie rzeczywiście istnieje
+                                    verification = verify_appointment_exists(
+                                        client_name=name,
+                                        client_phone=phone,
+                                        appointment_datetime=appointment_datetime,
+                                        service_type=service
+                                    )
+                                    
+                                    if verification:
+                                        logger.info(f"✅ Spotkanie zweryfikowane w kalendarzu: {verification['event_id']}")
+                                        date_display = appointment_datetime.strftime('%A, %d %B %Y o %H:%M')
+                                        
+                                        # Zastąp "Rezerwuję wizytę..." potwierdzeniem
+                                        cleaned_response = cleaned_response.replace("📅 Rezerwuję wizytę w kalendarzu...", "")
+                                        # Usuń starą treść i dodaj tylko weryfikację
+                                        cleaned_response = cleaned_response.split('\n')[0]  # Tylko pierwsza linia
+                                        cleaned_response += f"\n\n✅ Wizyta zapisana w kalendarzu!"
+                                        cleaned_response += f"\n📅 Data: {date_display}"
+                                        cleaned_response += f"\n🆔 ID wizyty: {verification['event_id'][:8]}..."
+                                        cleaned_response += f"\n\n💇‍♂️ Dziękuję! Czekamy na Ciebie w salonie!"
+                                    else:
+                                        logger.error("❌ Spotkanie nie zostało zapisane w kalendarzu!")
+                                        # Usuń "Rezerwuję wizytę..." i zastąp błędem
+                                        cleaned_response = cleaned_response.replace("📅 Rezerwuję wizytę w kalendarzu...", "")
+                                        cleaned_response = cleaned_response.replace("✅ REZERWACJA POTWIERDZONA:", "❌ BŁĄD REZERWACJI:")
+                                        cleaned_response += f"\n\n⚠️ Przepraszam, wystąpił problem z zapisaniem wizyty w kalendarzu."
+                                        cleaned_response += f"\n📞 Proszę zadzwoń bezpośrednio do salonu: 123-456-789"
                                 else:
                                     logger.error("❌ Błąd dodawania do kalendarza")
-                                    cleaned_response += f"\n\n⚠️ Rezerwacja zapisana, problem z kalendarzem Google."
+                                    cleaned_response = cleaned_response.replace("✅ REZERWACJA POTWIERDZONA:", "❌ BŁĄD REZERWACJI:")
+                                    cleaned_response += f"\n\n⚠️ Przepraszam, wystąpił problem z zapisaniem wizyty."
+                                    cleaned_response += f"\n📞 Proszę zadzwoń bezpośrednio do salonu: 123-456-789"
                             else:
                                 logger.error(f"❌ Nieprawidłowy format czasu: {time_str}")
                         else:
